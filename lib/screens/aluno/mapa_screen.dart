@@ -8,7 +8,7 @@ import '../../widgets/home_top_bar.dart';
 class MapaScreen extends StatefulWidget {
   const MapaScreen({super.key, this.active = false});
 
-  /// Constr��i o FlutterMap apenas quando a aba Ǹ aberta pela primeira vez.
+  /// Constroi o FlutterMap apenas quando a aba e aberta pela primeira vez.
   final bool active;
 
   @override

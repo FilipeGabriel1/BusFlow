@@ -14,7 +14,11 @@ class NotificacoesScreen extends StatefulWidget {
 class _NotificacoesScreenState extends State<NotificacoesScreen> {
   @override
   void dispose() {
-    NotificationStore.instance.marcarTodasComoLidas();
+    // Aguarda o próximo frame: dispose roda com a árvore travada durante o
+    // unmount e notifyListeners não pode marcar rebuild nesse momento.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationStore.instance.marcarTodasComoLidas();
+    });
     super.dispose();
   }
 

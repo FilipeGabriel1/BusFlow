@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:busflow/screens/admin/admin_home_screen.dart';
+import 'package:busflow/screens/admin/admin_main_screen.dart';
+import 'package:busflow/screens/admin/admin_perfil_screen.dart';
 import 'package:busflow/screens/aluno/aluno_main_screen.dart';
 import 'package:busflow/screens/aluno/carteirinha_screen.dart';
 import 'package:busflow/screens/aluno/conta_aluno_screen.dart';
@@ -294,7 +297,11 @@ void main() {
   testWidgets('Login com cadastro salvo entra na tela do aluno', (
     WidgetTester tester,
   ) async {
-    SharedPreferences.setMockInitialValues({'aluno_registered': true});
+    SharedPreferences.setMockInitialValues({
+      'aluno_registered': true,
+      'aluno_email': 'ana@universidade.edu.br',
+      'aluno_senha': 'senha123',
+    });
     setBigScreen(tester);
 
     await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
@@ -311,6 +318,55 @@ void main() {
       find.text('Uma viagem mais segura começa no BusFlow.'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('Login com senha incorreta mostra aviso', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'aluno_registered': true,
+      'aluno_email': 'ana@universidade.edu.br',
+      'aluno_senha': 'senha123',
+    });
+    setBigScreen(tester);
+
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), 'ana@universidade.edu.br');
+    await tester.enterText(fields.at(1), 'outraSenha');
+
+    await tester.tap(find.text('Entrar no Aplicativo'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Senha incorreta.'), findsOneWidget);
+    expect(find.byType(AlunoMainScreen), findsNothing);
+  });
+
+  testWidgets('Login com e-mail não cadastrado mostra aviso', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'aluno_registered': true,
+      'aluno_email': 'ana@universidade.edu.br',
+      'aluno_senha': 'senha123',
+    });
+    setBigScreen(tester);
+
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), 'outra@pessoa.edu.br');
+    await tester.enterText(fields.at(1), 'senha123');
+
+    await tester.tap(find.text('Entrar no Aplicativo'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Conta não encontrada. Crie sua conta para continuar.'),
+      findsOneWidget,
+    );
+    expect(find.byType(AlunoMainScreen), findsNothing);
   });
 
   testWidgets('Abas e filtros da tela de viagens funcionam', (
@@ -673,5 +729,122 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Dados Pessoais').hitTestable(), findsNothing);
+  });
+
+  testWidgets('Cadastro de administrador salva e entra no painel CCO', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1080, 6200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      const MaterialApp(home: AdminRegistrationScreen()),
+    );
+
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), 'Helena Vasconcelos');
+    await tester.enterText(fields.at(1), 'helena@depar.gov.br');
+    await tester.enterText(fields.at(2), '16316170440');
+    await tester.pumpAndSettle();
+    expect(find.text('163.161.704-40'), findsOneWidget);
+
+    await tester.enterText(fields.at(3), 'vitoria');
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Prefeitura Municipal de Vitória de Santo Antão • PE'),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.text('Prefeitura Municipal de Vitória de Santo Antão • PE'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Prefeitura Municipal de Vitória de Santo Antão • PE'),
+        findsOneWidget);
+
+    await tester.enterText(fields.at(5), 'Senha@Forte123');
+    await tester.enterText(fields.at(6), 'Senha@Forte123');
+
+    await tester.tap(find.byKey(const ValueKey('chave-demo')));
+    await tester.pumpAndSettle();
+    expect(find.text('ADM-DEMO-0001-2026'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('cargo-field')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Supervisor de Frota'));
+    await tester.pumpAndSettle();
+    expect(find.text('Supervisor de Frota'), findsOneWidget);
+
+    await tester.tap(find.text('Assinatura Termo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('LGPD Municipal'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cadastrar Administrador'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AdminMainScreen), findsOneWidget);
+    expect(find.text('AÇÕES DE GESTÃO'), findsOneWidget);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('admin_registered'), true);
+    expect(prefs.getString('admin_nome'), 'Helena Vasconcelos');
+    expect(prefs.getString('admin_email'), 'helena@depar.gov.br');
+    expect(prefs.getString('admin_cpf'), '163.161.704-40');
+    expect(prefs.getString('admin_orgao'),
+        'Prefeitura Municipal de Vitória de Santo Antão • PE');
+    expect(prefs.getString('admin_cargo'), 'Supervisor de Frota');
+    expect(prefs.getString('admin_chave'), 'ADM-DEMO-0001-2026');
+  });
+
+  testWidgets('Painel admin navega entre as quatro abas', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'admin_registered': true});
+    setBigScreen(tester);
+
+    await tester.pumpWidget(const MaterialApp(home: AdminMainScreen()));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AdminHomeScreen), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('admin-nav-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Frota e Rotas'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('admin-nav-2')));
+    await tester.pumpAndSettle();
+    expect(find.text('Gerenciar Usuários'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('admin-nav-3')));
+    await tester.pumpAndSettle();
+    expect(find.byType(AdminPerfilScreen), findsOneWidget);
+    expect(find.text('SUPER ADMIN CCO'), findsOneWidget);
+  });
+
+  testWidgets('Perfil do administrador encerra sessão com confirmação', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'admin_registered': true});
+    setBigScreen(tester);
+
+    await tester.pumpWidget(
+      const MaterialApp(home: AdminMainScreen(initialIndex: 3)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('encerrar-sessao')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('encerrar-sessao')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Encerrar Sessão Segura?'), findsOneWidget);
+    await tester.tap(find.text('Encerrar'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LoginScreen), findsOneWidget);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('admin_registered'), isNull);
   });
 }

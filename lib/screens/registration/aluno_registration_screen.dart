@@ -307,6 +307,7 @@ class _AlunoRegistrationScreenState extends State<AlunoRegistrationScreen> {
       whatsapp: _whatsapp.text.trim(),
       instituicao: _instituicao.text.trim(),
       turno: _turnos[_turno].$3,
+      senha: _senha.text,
     );
     if (!mounted) return;
     setState(() => _saving = false);

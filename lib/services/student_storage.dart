@@ -11,6 +11,7 @@ class StudentStorage {
   static const _kWhatsapp = 'aluno_whatsapp';
   static const _kInstituicao = 'aluno_instituicao';
   static const _kTurno = 'aluno_turno';
+  static const _kSenha = 'aluno_senha';
 
   static Future<bool> isRegistered() async {
     final prefs = await SharedPreferences.getInstance();
@@ -25,6 +26,7 @@ class StudentStorage {
     required String whatsapp,
     required String instituicao,
     required String turno,
+    required String senha,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kRegistered, true);
@@ -35,6 +37,7 @@ class StudentStorage {
     await prefs.setString(_kWhatsapp, whatsapp);
     await prefs.setString(_kInstituicao, instituicao);
     await prefs.setString(_kTurno, turno);
+    await prefs.setString(_kSenha, senha);
   }
 
   static Future<Map<String, String>> getAluno() async {
@@ -47,6 +50,7 @@ class StudentStorage {
       'whatsapp': prefs.getString(_kWhatsapp) ?? '',
       'instituicao': prefs.getString(_kInstituicao) ?? '',
       'turno': prefs.getString(_kTurno) ?? '',
+      'senha': prefs.getString(_kSenha) ?? '',
     };
   }
 

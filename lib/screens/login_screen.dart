@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../services/admin_storage.dart';
+import '../services/motorista_storage.dart';
 import '../services/student_storage.dart';
 import '../theme.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/logo.dart';
+import 'admin/admin_main_screen.dart';
 import 'aluno/aluno_main_screen.dart';
+import 'motorista/motorista_main_screen.dart';
 import 'profile_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -35,20 +39,78 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _entrar() async {
-    if (_email.text.trim().isEmpty || _senha.text.isEmpty) {
+    final identificador = _email.text.trim();
+    final senha = _senha.text;
+    if (identificador.isEmpty || senha.isEmpty) {
       _snack('Informe seu e-mail/CPF e senha para entrar.');
       return;
     }
-    final registered = await StudentStorage.isRegistered();
-    if (!mounted) return;
-    if (registered) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AlunoMainScreen()),
-        (route) => false,
-      );
-    } else {
-      _snack('Conta não encontrada. Crie sua conta para continuar.');
+    final idNormal = identificador.toLowerCase();
+    final idDigitos = idNormal.replaceAll(RegExp(r'[^0-9]'), '');
+
+    bool corresponde(Map<String, String> dados) {
+      final email = (dados['email'] ?? '').trim().toLowerCase();
+      final cpf = (dados['cpf'] ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+      if (email.isNotEmpty && email == idNormal) return true;
+      if (cpf.isNotEmpty && idDigitos.isNotEmpty && cpf == idDigitos) {
+        return true;
+      }
+      return false;
     }
+
+    // Contas antigas (antes da validação de senha) aceitam qualquer senha.
+    bool senhaOk(Map<String, String> dados) {
+      final salva = dados['senha'] ?? '';
+      return salva.isEmpty || salva == senha;
+    }
+
+    if (await AdminStorage.isRegistered()) {
+      final dados = await AdminStorage.getAdmin();
+      if (corresponde(dados)) {
+        if (!mounted) return;
+        if (!senhaOk(dados)) {
+          _snack('Senha incorreta.');
+          return;
+        }
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AdminMainScreen()),
+          (route) => false,
+        );
+        return;
+      }
+    }
+    if (await MotoristaStorage.isRegistered()) {
+      final dados = await MotoristaStorage.getMotorista();
+      if (corresponde(dados)) {
+        if (!mounted) return;
+        if (!senhaOk(dados)) {
+          _snack('Senha incorreta.');
+          return;
+        }
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const MotoristaMainScreen()),
+          (route) => false,
+        );
+        return;
+      }
+    }
+    if (await StudentStorage.isRegistered()) {
+      final dados = await StudentStorage.getAluno();
+      if (corresponde(dados)) {
+        if (!mounted) return;
+        if (!senhaOk(dados)) {
+          _snack('Senha incorreta.');
+          return;
+        }
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AlunoMainScreen()),
+          (route) => false,
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
+    _snack('Conta não encontrada. Crie sua conta para continuar.');
   }
 
   @override
@@ -58,36 +120,34 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: AutofillGroup(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildTopBar(),
-                const SizedBox(height: 18),
-                _buildBackRow(),
-                const SizedBox(height: 22),
-                Center(child: _buildLogoCard()),
-                const SizedBox(height: 24),
-                _buildTitle(),
-                const SizedBox(height: 22),
-                _buildTabs(),
-                const SizedBox(height: 22),
-                _buildEmailField(),
-                const SizedBox(height: 16),
-                _buildPasswordField(),
-                const SizedBox(height: 22),
-                _buildPrimaryButton(),
-                const SizedBox(height: 20),
-                _buildDivider(),
-                const SizedBox(height: 16),
-                _buildGovButton(),
-                const SizedBox(height: 16),
-                _buildRegisterCard(),
-                const SizedBox(height: 20),
-                _buildFooter(),
-              ],
-            ),
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildTopBar(),
+            const SizedBox(height: 18),
+            _buildBackRow(),
+            const SizedBox(height: 22),
+            Center(child: _buildLogoCard()),
+            const SizedBox(height: 24),
+            _buildTitle(),
+            const SizedBox(height: 22),
+            _buildTabs(),
+            const SizedBox(height: 22),
+            _buildEmailField(),
+            const SizedBox(height: 16),
+            _buildPasswordField(),
+            const SizedBox(height: 22),
+            _buildPrimaryButton(),
+            const SizedBox(height: 20),
+            _buildDivider(),
+            const SizedBox(height: 16),
+            _buildGovButton(),
+            const SizedBox(height: 16),
+            _buildRegisterCard(),
+            const SizedBox(height: 20),
+            _buildFooter(),
+          ],
+        ),
         ),
       ),
       bottomNavigationBar: const BusFlowBottomNav(),
@@ -293,7 +353,8 @@ class _LoginScreenState extends State<LoginScreen> {
           controller: _email,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
-          autofillHints: const [AutofillHints.username, AutofillHints.email],
+          autocorrect: false,
+          enableSuggestions: false,
           onChanged: (_) => setState(() {}),
           style: const TextStyle(fontSize: 14, color: AppColors.textDark),
           decoration: InputDecoration(
@@ -365,7 +426,8 @@ class _LoginScreenState extends State<LoginScreen> {
           controller: _senha,
           obscureText: _obscurePassword,
           textInputAction: TextInputAction.done,
-          autofillHints: const [AutofillHints.password],
+          autocorrect: false,
+          enableSuggestions: false,
           onChanged: (_) => setState(() {}),
           style: const TextStyle(fontSize: 14, color: AppColors.textDark),
           decoration: InputDecoration(
