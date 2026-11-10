@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../screens/dados_pessoais_screen.dart';
+import '../services/account_profile.dart';
+import '../services/supabase_auth_service.dart';
 import '../screens/login_screen.dart';
+import '../screens/security_settings_screen.dart';
+import '../services/app_settings.dart';
 import '../theme.dart';
 
 Future<void> sairDaConta(BuildContext context) async {
@@ -20,7 +25,11 @@ Future<void> sairDaConta(BuildContext context) async {
       content: const Text(
         'Você voltará para a tela de login do BusFlow. '
         'Seus dados de passagem continuam salvos neste dispositivo.',
-        style: TextStyle(fontSize: 13.5, height: 1.5, color: AppColors.textGray),
+        style: TextStyle(
+          fontSize: 13.5,
+          height: 1.5,
+          color: AppColors.textGray,
+        ),
       ),
       actions: [
         TextButton(
@@ -49,6 +58,8 @@ Future<void> sairDaConta(BuildContext context) async {
     ),
   );
   if (confirmado != true || !context.mounted) return;
+  await SupabaseAuthService.signOut();
+  if (!context.mounted) return;
   Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
     MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
     (route) => false,
@@ -56,7 +67,14 @@ Future<void> sairDaConta(BuildContext context) async {
 }
 
 class ConfiguracoesCard extends StatefulWidget {
-  const ConfiguracoesCard({super.key});
+  const ConfiguracoesCard({
+    super.key,
+    this.profileKind = ProfileKind.aluno,
+    this.onDadosAtualizados,
+  });
+
+  final ProfileKind profileKind;
+  final VoidCallback? onDadosAtualizados;
 
   @override
   State<ConfiguracoesCard> createState() => _ConfiguracoesCardState();
@@ -85,7 +103,15 @@ class _ConfiguracoesCardState extends State<ConfiguracoesCard> {
             icon: Icons.person_outline,
             titulo: 'Dados Pessoais',
             subtitulo: 'Nome, e-mail e matrícula',
-            onTap: () => _snack('Dados pessoais: edição disponível em breve.'),
+            onTap: () async {
+              final updated = await Navigator.of(context).push<bool>(
+                MaterialPageRoute<bool>(
+                  builder: (_) =>
+                      DadosPessoaisScreen(profileKind: widget.profileKind),
+                ),
+              );
+              if (updated == true) widget.onDadosAtualizados?.call();
+            },
           ),
           const _SettingDivider(),
           _SettingRow(
@@ -93,6 +119,7 @@ class _ConfiguracoesCardState extends State<ConfiguracoesCard> {
             titulo: 'Notificações',
             subtitulo: 'Alertas de viagem e embarque',
             trailing: Switch(
+              key: const ValueKey('config-notificacoes'),
               value: _notificacoes,
               activeThumbColor: AppColors.primary,
               onChanged: (v) {
@@ -108,7 +135,26 @@ class _ConfiguracoesCardState extends State<ConfiguracoesCard> {
             icon: Icons.lock_outline,
             titulo: 'Segurança',
             subtitulo: 'Senha, biometria e sessões',
-            onTap: () => _snack('Segurança: configurações em breve.'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const SecuritySettingsScreen(),
+              ),
+            ),
+          ),
+          const _SettingDivider(),
+          _SettingRow(
+            icon: Icons.dark_mode_outlined,
+            titulo: 'Tema escuro',
+            subtitulo: 'Aplicar tema escuro no aplicativo',
+            trailing: ListenableBuilder(
+              listenable: AppSettings.instance,
+              builder: (context, _) => Switch(
+                key: const ValueKey('config-tema-escuro'),
+                value: AppSettings.instance.darkMode,
+                activeThumbColor: AppColors.primary,
+                onChanged: AppSettings.instance.setDarkMode,
+              ),
+            ),
           ),
           const _SettingDivider(),
           _SettingRow(
@@ -181,11 +227,7 @@ class LogoutCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: Color(0xFFDC2626),
-            ),
+            const Icon(Icons.chevron_right, size: 20, color: Color(0xFFDC2626)),
           ],
         ),
       ),

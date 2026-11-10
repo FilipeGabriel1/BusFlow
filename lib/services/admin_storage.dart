@@ -11,6 +11,7 @@ class AdminStorage {
   static const _kCargo = 'admin_cargo';
   static const _kChave = 'admin_chave';
   static const _kSenha = 'admin_senha';
+  static const _kProfilePhoto = 'admin_profile_photo';
 
   static Future<bool> isRegistered() async {
     final prefs = await SharedPreferences.getInstance();
@@ -25,6 +26,7 @@ class AdminStorage {
     String cargo = '',
     String chave = '',
     required String senha,
+    String profilePhoto = '',
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kRegistered, true);
@@ -35,6 +37,7 @@ class AdminStorage {
     await prefs.setString(_kCargo, cargo);
     await prefs.setString(_kChave, chave);
     await prefs.setString(_kSenha, senha);
+    await prefs.setString(_kProfilePhoto, profilePhoto);
   }
 
   static Future<Map<String, String>> getAdmin() async {
@@ -47,7 +50,33 @@ class AdminStorage {
       'cargo': prefs.getString(_kCargo) ?? '',
       'chave': prefs.getString(_kChave) ?? '',
       'senha': prefs.getString(_kSenha) ?? '',
+      'profilePhoto': prefs.getString(_kProfilePhoto) ?? '',
     };
+  }
+
+  static Future<void> updateProfile({
+    required Map<String, String> fields,
+    required String profilePhoto,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    const keys = {
+      'nome': _kNome,
+      'email': _kEmail,
+      'cpf': _kCpf,
+      'orgao': _kOrgao,
+      'cargo': _kCargo,
+      'chave': _kChave,
+    };
+    for (final entry in fields.entries) {
+      final key = keys[entry.key];
+      if (key != null) await prefs.setString(key, entry.value);
+    }
+    await prefs.setString(_kProfilePhoto, profilePhoto);
+  }
+
+  static Future<void> updatePassword(String senha) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kSenha, senha);
   }
 
   static Future<void> clear() async {
@@ -60,5 +89,6 @@ class AdminStorage {
     await prefs.remove(_kCargo);
     await prefs.remove(_kChave);
     await prefs.remove(_kSenha);
+    await prefs.remove(_kProfilePhoto);
   }
 }

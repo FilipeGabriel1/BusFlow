@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:busflow/screens/admin/admin_home_screen.dart';
 import 'package:busflow/screens/admin/admin_main_screen.dart';
 import 'package:busflow/screens/admin/admin_perfil_screen.dart';
+import 'package:busflow/screens/dados_pessoais_screen.dart';
 import 'package:busflow/screens/aluno/aluno_main_screen.dart';
 import 'package:busflow/screens/aluno/carteirinha_screen.dart';
 import 'package:busflow/screens/aluno/conta_aluno_screen.dart';
@@ -12,12 +13,15 @@ import 'package:busflow/screens/aluno/mapa_screen.dart';
 import 'package:busflow/screens/aluno/notificacoes_screen.dart';
 import 'package:busflow/screens/aluno/trips_screen.dart';
 import 'package:busflow/screens/login_screen.dart';
+import 'package:busflow/screens/password_recovery_screen.dart';
 import 'package:busflow/screens/profile_selection_screen.dart';
 import 'package:busflow/screens/registration/admin_registration_screen.dart';
 import 'package:busflow/screens/registration/aluno_registration_screen.dart';
 import 'package:busflow/screens/registration/motorista_registration_screen.dart';
 import 'package:busflow/services/notification_store.dart';
+import 'package:busflow/services/account_profile.dart';
 import 'package:busflow/services/reservation_store.dart';
+import 'package:busflow/services/student_storage.dart';
 
 void main() {
   void setBigScreen(WidgetTester tester) {
@@ -39,7 +43,8 @@ void main() {
     expect(find.text('Entrar no Aplicativo'), findsOneWidget);
     expect(find.text('E-mail ou CPF'), findsOneWidget);
     expect(find.text('Senha'), findsOneWidget);
-    expect(find.text('PASSAPORTE ATIVO'), findsOneWidget);
+    expect(find.text('PASSAPORTE ATIVO'), findsNothing);
+    expect(find.text('Voltar'), findsNothing);
   });
 
   testWidgets('Tela de escolha de perfil renderiza corretamente', (
@@ -339,7 +344,10 @@ void main() {
     await tester.tap(find.text('Entrar no Aplicativo'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Senha incorreta.'), findsOneWidget);
+    expect(
+      find.textContaining('Senha incorreta. Tente novamente'),
+      findsOneWidget,
+    );
     expect(find.byType(AlunoMainScreen), findsNothing);
   });
 
@@ -570,7 +578,15 @@ void main() {
 
     await tester.tap(find.text('Pedir Espera'));
     await tester.pump();
-    expect(find.textContaining('o motorista será notificado'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('Motivo da espera'), findsOneWidget);
+    await tester.enterText(
+      find.byType(TextField).first,
+      'A aula terminou atrasada',
+    );
+    await tester.tap(find.text('Enviar pedido'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('depende da sincronização'), findsOneWidget);
   });
 
   testWidgets('Configurações da conta e logout voltam para o login', (
@@ -592,26 +608,30 @@ void main() {
     expect(find.text('Sair da conta'), findsOneWidget);
     expect(find.text('Voltar para a tela de login'), findsOneWidget);
 
-    await tester.ensureVisible(find.byType(Switch));
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+    final notificationSwitch = find.byKey(
+      const ValueKey('config-notificacoes'),
+    );
+    await tester.ensureVisible(notificationSwitch);
+    expect(tester.widget<Switch>(notificationSwitch).value, isTrue);
 
-    await tester.tap(find.byType(Switch));
+    await tester.tap(notificationSwitch);
     await tester.pumpAndSettle();
 
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
-    expect(
-      find.textContaining('Notificações desativadas'),
-      findsOneWidget,
-    );
+    expect(tester.widget<Switch>(notificationSwitch).value, isFalse);
+    expect(find.textContaining('Notificações desativadas'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Sair da conta'));
     await tester.tap(find.text('Sair da conta'));
     await tester.pumpAndSettle();
 
     expect(find.text('Sair da conta?'), findsOneWidget);
-    expect(find.text('Você voltará para a tela de login do BusFlow. '
-        'Seus dados de passagem continuam salvos neste dispositivo.'),
-        findsOneWidget);
+    expect(
+      find.text(
+        'Você voltará para a tela de login do BusFlow. '
+        'Seus dados de passagem continuam salvos neste dispositivo.',
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Cancelar'));
     await tester.pumpAndSettle();
@@ -659,9 +679,7 @@ void main() {
     await tester.pump();
     expect(find.text('Universidade de São Paulo (USP)'), findsOneWidget);
 
-    await tester.ensureVisible(
-      find.text('Universidade de São Paulo (USP)'),
-    );
+    await tester.ensureVisible(find.text('Universidade de São Paulo (USP)'));
     await tester.tap(find.text('Universidade de São Paulo (USP)'));
     await tester.pump();
 
@@ -676,15 +694,12 @@ void main() {
 
     await tester.pumpWidget(const MaterialApp(home: AlunoMainScreen()));
 
-    expect(
-      find.byKey(const ValueKey('bell-dot')).first,
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('bell-dot')).first, findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('bell-btn')).hitTestable());
     await tester.pumpAndSettle();
 
-// painel de notificações (popup) aparece
+    // painel de notificações (popup) aparece
     expect(find.text('Embarque Confirmado'), findsOneWidget);
     expect(find.text('Ônibus em rota até você'), findsOneWidget);
     expect(find.text('Marcar todas como lidas'), findsOneWidget);
@@ -721,7 +736,9 @@ void main() {
     expect(find.text('Matrícula Ativa').hitTestable(), findsOneWidget);
 
     // alterna o switch dentro do painel
-    await tester.tap(find.byType(Switch).hitTestable());
+    await tester.tap(
+      find.byKey(const ValueKey('config-notificacoes')).hitTestable(),
+    );
     await tester.pumpAndSettle();
 
     // fechando o painel pelo botão X
@@ -739,9 +756,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(
-      const MaterialApp(home: AdminRegistrationScreen()),
-    );
+    await tester.pumpWidget(const MaterialApp(home: AdminRegistrationScreen()));
 
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(0), 'Helena Vasconcelos');
@@ -760,8 +775,10 @@ void main() {
       find.text('Prefeitura Municipal de Vitória de Santo Antão • PE'),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Prefeitura Municipal de Vitória de Santo Antão • PE'),
-        findsOneWidget);
+    expect(
+      find.text('Prefeitura Municipal de Vitória de Santo Antão • PE'),
+      findsOneWidget,
+    );
 
     await tester.enterText(fields.at(5), 'Senha@Forte123');
     await tester.enterText(fields.at(6), 'Senha@Forte123');
@@ -792,8 +809,10 @@ void main() {
     expect(prefs.getString('admin_nome'), 'Helena Vasconcelos');
     expect(prefs.getString('admin_email'), 'helena@depar.gov.br');
     expect(prefs.getString('admin_cpf'), '163.161.704-40');
-    expect(prefs.getString('admin_orgao'),
-        'Prefeitura Municipal de Vitória de Santo Antão • PE');
+    expect(
+      prefs.getString('admin_orgao'),
+      'Prefeitura Municipal de Vitória de Santo Antão • PE',
+    );
     expect(prefs.getString('admin_cargo'), 'Supervisor de Frota');
     expect(prefs.getString('admin_chave'), 'ADM-DEMO-0001-2026');
   });
@@ -846,5 +865,102 @@ void main() {
     expect(find.byType(LoginScreen), findsOneWidget);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool('admin_registered'), isNull);
+  });
+
+  testWidgets('Recuperação de senha abre a tela de e-mail pelo login', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+    await tester.tap(find.text('Esqueceu a senha?'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ForgotPasswordScreen), findsOneWidget);
+    expect(find.text('Recuperar senha'), findsOneWidget);
+    expect(find.text('Enviar código'), findsOneWidget);
+  });
+
+  testWidgets('Dados pessoais podem ser editados e persistidos', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await StudentStorage.saveAluno(
+      nome: 'Ana Costa',
+      email: 'ana@example.com',
+      ra: '2024.1.12345',
+      cpf: '123.456.789-00',
+      whatsapp: '(11) 99999-9999',
+      instituicao: 'Universidade de São Paulo',
+      turno: 'Manhã',
+      senha: 'senha-antiga',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      const DadosPessoaisScreen(profileKind: ProfileKind.aluno),
+                ),
+              ),
+              child: const Text('Editar'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Editar'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'Ana Costa Silva');
+    await tester.drag(find.byType(ListView), const Offset(0, -1800));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Salvar alterações'));
+    await tester.pumpAndSettle();
+
+    final aluno = await StudentStorage.getAluno();
+    expect(aluno['nome'], 'Ana Costa Silva');
+    expect(aluno['email'], 'ana@example.com');
+  });
+
+  testWidgets('Cadastro do aluno gera QR identificador próprio', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    Future<void> saveStudent(String nome) => StudentStorage.saveAluno(
+      nome: nome,
+      email: '$nome@example.com',
+      ra: '2024.1.12345',
+      cpf: '123.456.789-00',
+      whatsapp: '(11) 99999-9999',
+      instituicao: 'Universidade de São Paulo',
+      turno: 'Manhã',
+      senha: 'senha-antiga',
+    );
+
+    await saveStudent('Ana');
+    final firstQrId = (await StudentStorage.getAluno())['qrId'];
+    await saveStudent('Maria');
+    final secondQrId = (await StudentStorage.getAluno())['qrId'];
+
+    expect(firstQrId, matches(RegExp(r'^[a-f0-9-]{36}$')));
+    expect(secondQrId, matches(RegExp(r'^[a-f0-9-]{36}$')));
+    expect(secondQrId, isNot(firstQrId));
+  });
+
+  testWidgets('Foto do cadastro oferece galeria e câmera', (
+    WidgetTester tester,
+  ) async {
+    setBigScreen(tester);
+    await tester.pumpWidget(const MaterialApp(home: AlunoRegistrationScreen()));
+
+    await tester.ensureVisible(find.text('Tirar foto ou escolher da galeria'));
+    await tester.tap(find.text('Tirar foto ou escolher da galeria'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Escolher da galeria'), findsOneWidget);
+    expect(find.text('Tirar foto com a câmera'), findsOneWidget);
   });
 }

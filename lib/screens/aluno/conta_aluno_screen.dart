@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../services/student_storage.dart';
+import 'aluno_servicos_screen.dart';
 import '../../theme.dart';
 import '../../widgets/configuracoes_widgets.dart';
 import '../../widgets/home_top_bar.dart';
-import '../../widgets/logo.dart';
+import '../../widgets/profile_photo_picker.dart';
 
 class ContaAlunoScreen extends StatefulWidget {
   const ContaAlunoScreen({
@@ -22,6 +23,7 @@ class ContaAlunoScreen extends StatefulWidget {
 
 class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
   String _nome = 'Ana Costa';
+  String _profilePhoto = '';
 
   @override
   void initState() {
@@ -34,6 +36,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
       final aluno = await StudentStorage.getAluno();
       if (!mounted) return;
       setState(() {
+        _profilePhoto = aluno['profilePhoto'] ?? '';
         if (aluno['nome']?.isNotEmpty == true) {
           final partes = aluno['nome']!.trim().split(RegExp(r'\s+'));
           _nome = partes.length > 1
@@ -50,6 +53,14 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openStudentServices(int tab) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AlunoServicosScreen(initialTab: tab),
+      ),
+    );
   }
 
   @override
@@ -78,10 +89,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
               ),
               Text(
                 'Autoatendimento',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: AppColors.textGray,
-                ),
+                style: TextStyle(fontSize: 11.5, color: AppColors.textGray),
               ),
             ],
           ),
@@ -151,11 +159,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
                   ),
                 ),
                 SizedBox(width: 6),
-                Icon(
-                  Icons.arrow_forward,
-                  size: 16,
-                  color: Color(0xFF1E63B4),
-                ),
+                Icon(Icons.arrow_forward, size: 16, color: Color(0xFF1E63B4)),
               ],
             ),
           ),
@@ -178,7 +182,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          const ConfiguracoesCard(),
+          ConfiguracoesCard(onDadosAtualizados: _loadAluno),
           const SizedBox(height: 12),
           const LogoutCard(),
         ],
@@ -199,7 +203,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
           Stack(
             clipBehavior: Clip.none,
             children: [
-              const BusFlowAvatar(radius: 26),
+              ProfilePhotoAvatar(photo: _profilePhoto, size: 52),
               Positioned(
                 right: -1,
                 bottom: -1,
@@ -337,11 +341,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.directions_bus,
-                size: 16,
-                color: Colors.white,
-              ),
+              const Icon(Icons.directions_bus, size: 16, color: Colors.white),
               const SizedBox(width: 7),
               const Expanded(
                 child: Text(
@@ -355,10 +355,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
                   color: AppColors.greenDot,
                   borderRadius: BorderRadius.circular(20),
@@ -498,8 +495,9 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
           ),
           titulo: 'Desistência de Vaga',
           descricao: '(Avisa que não usará o ônibus no dia)',
-          onTap: () => _snack('Desistência de vaga: em breve você será '
-              'avisado da política de uso.'),
+          onTap: () => _snack(
+            'Para desistir de uma vaga, abra o histórico da viagem e selecione a reserva.',
+          ),
         ),
         _AcaoCard(
           icon: Icons.watch_later_outlined,
@@ -512,7 +510,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
           ),
           titulo: 'Pedir Espera',
           descricao: '(Notifica atraso na saída da aula)',
-          onTap: () => _snack('Pedir espera: o motorista será notificado.'),
+          onTap: () => _openStudentServices(0),
         ),
         _AcaoCard(
           icon: Icons.calendar_month_outlined,
@@ -525,7 +523,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
           ),
           titulo: 'Calendário de Rotas',
           descricao: 'Consulte horários e semestres',
-          onTap: () => _snack('Calendário de rotas: em breve.'),
+          onTap: () => _openStudentServices(1),
         ),
         _AcaoCard(
           icon: Icons.inventory_2_outlined,
@@ -538,7 +536,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
           ),
           titulo: 'Achados e Perdidos',
           descricao: 'Registre itens esquecidos a bordo',
-          onTap: () => _snack('Achados e perdidos: em breve.'),
+          onTap: () => _openStudentServices(2),
         ),
       ],
     );
@@ -612,9 +610,7 @@ class _ContaAlunoScreenState extends State<ContaAlunoScreen> {
             decoration: BoxDecoration(
               color: badgeBg,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: badgeFg.withValues(alpha: 0.25),
-              ),
+              border: Border.all(color: badgeFg.withValues(alpha: 0.25)),
             ),
             child: Text(
               badge,

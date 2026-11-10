@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../services/account_profile.dart';
 import '../../services/admin_data_store.dart';
 import '../../services/admin_storage.dart';
+import '../../services/supabase_auth_service.dart';
 import '../../theme.dart';
 import '../../widgets/admin_top_bar.dart';
+import '../../widgets/profile_photo_picker.dart';
+import '../dados_pessoais_screen.dart';
 import '../login_screen.dart';
 
 class AdminPerfilScreen extends StatefulWidget {
@@ -19,6 +23,29 @@ class _AdminPerfilScreenState extends State<AdminPerfilScreen> {
   bool _atrasos = true;
   bool _aparencia = false;
   bool _saindo = false;
+  String _profilePhoto = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfilePhoto();
+  }
+
+  Future<void> _loadProfilePhoto() async {
+    final data = await AdminStorage.getAdmin();
+    if (mounted) setState(() => _profilePhoto = data['profilePhoto'] ?? '');
+  }
+
+  Future<void> _editarDados() async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) =>
+            const DadosPessoaisScreen(profileKind: ProfileKind.admin),
+      ),
+    );
+    await AdminDataStore.instance.load();
+    await _loadProfilePhoto();
+  }
 
   void _snack(String message) {
     ScaffoldMessenger.of(context)
@@ -60,6 +87,7 @@ class _AdminPerfilScreenState extends State<AdminPerfilScreen> {
     );
     if (confirmar != true || !mounted) return;
     setState(() => _saindo = true);
+    await SupabaseAuthService.signOut();
     await AdminStorage.clear();
     AdminDataStore.instance.limparTudo();
     if (!mounted) return;
@@ -108,10 +136,7 @@ class _AdminPerfilScreenState extends State<AdminPerfilScreen> {
                   Text(
                     'PRAE • Departamento de Mobilidade Universitária',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      color: AppColors.hintGray,
-                    ),
+                    style: TextStyle(fontSize: 10.5, color: AppColors.hintGray),
                   ),
                 ],
               ),
@@ -138,23 +163,25 @@ class _AdminPerfilScreenState extends State<AdminPerfilScreen> {
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      store.iniciaisAvatar,
-                      style: const TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+                  _profilePhoto.isNotEmpty
+                      ? ProfilePhotoAvatar(photo: _profilePhoto, size: 56)
+                      : Container(
+                          width: 56,
+                          height: 56,
+                          decoration: const BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            store.iniciaisAvatar,
+                            style: const TextStyle(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
                   Positioned(
                     right: 1,
                     bottom: 2,
@@ -205,7 +232,7 @@ class _AdminPerfilScreenState extends State<AdminPerfilScreen> {
                 ),
               ),
               GestureDetector(
-                onTap: () => _snack('Edição de perfil disponível na central.'),
+                onTap: _editarDados,
                 child: Container(
                   padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
@@ -226,10 +253,7 @@ class _AdminPerfilScreenState extends State<AdminPerfilScreen> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
                   color: AppColors.softBlue,
                   borderRadius: BorderRadius.circular(8),
@@ -238,7 +262,11 @@ class _AdminPerfilScreenState extends State<AdminPerfilScreen> {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.verified_user, size: 12, color: AppColors.primary),
+                    Icon(
+                      Icons.verified_user,
+                      size: 12,
+                      color: AppColors.primary,
+                    ),
                     SizedBox(width: 5),
                     Text(
                       'SUPER ADMIN CCO',
@@ -254,10 +282,7 @@ class _AdminPerfilScreenState extends State<AdminPerfilScreen> {
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
                   color: AppColors.badgeBg,
                   borderRadius: BorderRadius.circular(8),
@@ -311,10 +336,7 @@ class _AdminPerfilScreenState extends State<AdminPerfilScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 7,
-                  vertical: 3,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: AppColors.tabBg,
                   borderRadius: BorderRadius.circular(7),
@@ -607,10 +629,7 @@ class _MetricaItem extends StatelessWidget {
             titulo,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 10.5,
-              color: AppColors.textGray,
-            ),
+            style: const TextStyle(fontSize: 10.5, color: AppColors.textGray),
           ),
           const SizedBox(height: 3),
           FittedBox(
@@ -707,10 +726,7 @@ class _LinhaGovernanca extends StatelessWidget {
             ),
             if (tag.isNotEmpty)
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 7,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                 decoration: BoxDecoration(
                   color: tagCor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(7),
