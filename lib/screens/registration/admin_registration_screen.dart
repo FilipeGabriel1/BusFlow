@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/api_service.dart';
 import '../../services/app_settings.dart';
 import '../../services/admin_storage.dart';
 import '../../services/supabase_auth_service.dart';
@@ -402,6 +403,26 @@ class _AdminRegistrationScreenState extends State<AdminRegistrationScreen> {
           return;
         }
       } else {
+        // Tentar salvar na API MySQL primeiro
+        final apiOnline = await ApiService.isApiOnline();
+        if (apiOnline) {
+          final result = await ApiService.cadastrarAdmin(
+            nome: _nome.text.trim(),
+            email: _email.text.trim().toLowerCase(),
+            senha: _senha.text,
+            cpf: _cpf.text.trim(),
+            cargo: _cargoSel!,
+            orgao: _orgao.text.trim(),
+            chaveAdm: _chave.text.trim(),
+          );
+          if (result['sucesso'] != true) {
+            if (!mounted) return;
+            setState(() => _saving = false);
+            _snack(result['erro'] as String? ?? 'Erro ao cadastrar');
+            return;
+          }
+        }
+        // Salvar também no SharedPreferences como cache
         await AdminStorage.saveAdmin(
           nome: _nome.text.trim(),
           email: _email.text.trim(),

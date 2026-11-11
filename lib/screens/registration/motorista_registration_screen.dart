@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/api_service.dart';
 import '../../services/app_settings.dart';
 import '../../services/motorista_storage.dart';
 import '../../services/supabase_auth_service.dart';
@@ -279,6 +280,26 @@ class _MotoristaRegistrationScreenState
           return;
         }
       } else {
+        // Tentar salvar na API MySQL primeiro
+        final apiOnline = await ApiService.isApiOnline();
+        if (apiOnline) {
+          final result = await ApiService.cadastrarMotorista(
+            nome: _nome.text.trim(),
+            email: _email.text.trim().toLowerCase(),
+            senha: _senha.text,
+            cpf: _cpf.text.trim(),
+            cnh: _cnh.text.trim(),
+            empresa: _empresa ?? '',
+            telefone: _telefone.text.trim(),
+          );
+          if (result['sucesso'] != true) {
+            if (!mounted) return;
+            setState(() => _saving = false);
+            _snack(result['erro'] as String? ?? 'Erro ao cadastrar');
+            return;
+          }
+        }
+        // Salvar também no SharedPreferences como cache
         await MotoristaStorage.saveMotorista(
           nome: _nome.text.trim(),
           email: _email.text.trim(),

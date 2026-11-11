@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/api_service.dart';
 import '../../services/app_settings.dart';
 import '../../services/supabase_auth_service.dart';
 import '../../services/student_storage.dart';
@@ -360,6 +361,30 @@ class _AlunoRegistrationScreenState extends State<AlunoRegistrationScreen> {
           return;
         }
       } else {
+        // Tentar salvar na API MySQL primeiro
+        final apiOnline = await ApiService.isApiOnline();
+        if (apiOnline) {
+          final result = await ApiService.cadastrarAluno(
+            nome: _nome.text.trim(),
+            email: _email.text.trim().toLowerCase(),
+            senha: _senha.text,
+            cpf: _cpf.text.trim(),
+            ra: _ra.text.trim(),
+            instituicao: _instituicao.text.trim(),
+            telefone: _whatsapp.text.trim(),
+          );
+          if (result['sucesso'] != true) {
+            if (!mounted) return;
+            setState(() => _saving = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(result['erro'] as String? ?? 'Erro ao cadastrar'),
+              ),
+            );
+            return;
+          }
+        }
+        // Salvar também no SharedPreferences como cache
         await StudentStorage.saveAluno(
           nome: _nome.text.trim(),
           email: _email.text.trim(),
