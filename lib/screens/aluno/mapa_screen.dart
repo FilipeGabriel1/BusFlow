@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../theme.dart';
@@ -19,6 +22,9 @@ class _MapaScreenState extends State<MapaScreen> {
   bool _mapBuilt = false;
   int _filtro = 0;
   int _segundos = 12;
+  final MapController _mapController = MapController();
+  LatLng? _currentPosition;
+  StreamSubscription<Position>? _locationSubscription;
 
   static const _filtros = [
     'Todas as Linhas',
@@ -74,6 +80,12 @@ class _MapaScreenState extends State<MapaScreen> {
   }
 
   @override
+  void dispose() {
+    _locationSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
   void didUpdateWidget(covariant MapaScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.active) _mapBuilt = true;
@@ -83,6 +95,63 @@ class _MapaScreenState extends State<MapaScreen> {
     if (_filtro == 0) return _veiculos;
     final linha = _filtro == 1 ? 'Linha 04' : 'Linha 02';
     return _veiculos.where((v) => v.linha == linha).toList();
+  }
+
+  Future<void> _atualizarLocalizacao() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _showMessage('Ative o serviço de localização do aparelho.');
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        _showMessage('Permita o acesso à localização nas configurações.');
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      final point = LatLng(position.latitude, position.longitude);
+      setState(() {
+        _currentPosition = point;
+        _mapBuilt = true;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _mapController.move(point, 15);
+      });
+      await _locationSubscription?.cancel();
+      _locationSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 10,
+            ),
+          ).listen(
+            (updatedPosition) {
+              if (!mounted) return;
+              setState(
+                () => _currentPosition = LatLng(
+                  updatedPosition.latitude,
+                  updatedPosition.longitude,
+                ),
+              );
+            },
+            onError: (Object error) {
+              if (mounted) _showMessage('A atualização do GPS falhou: $error');
+            },
+          );
+    } catch (error) {
+      if (mounted) _showMessage('Não foi possível obter a localização: $error');
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -123,8 +192,9 @@ class _MapaScreenState extends State<MapaScreen> {
         children: [
           if (_mapBuilt)
             FlutterMap(
+              mapController: _mapController,
               options: MapOptions(
-                initialCenter: _userPos,
+                initialCenter: _currentPosition ?? _userPos,
                 initialZoom: 13.4,
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
@@ -140,7 +210,7 @@ class _MapaScreenState extends State<MapaScreen> {
                     Polyline(
                       points: [
                         _veiculos[0].pos,
-                        _userPos,
+                        _currentPosition ?? _userPos,
                         _veiculos[1].pos,
                         _veiculos[2].pos,
                       ],
@@ -213,7 +283,7 @@ class _MapaScreenState extends State<MapaScreen> {
                         ),
                       ),
                     Marker(
-                      point: _userPos,
+                      point: _currentPosition ?? _userPos,
                       width: 160,
                       height: 64,
                       child: Column(
@@ -340,7 +410,25 @@ class _MapaScreenState extends State<MapaScreen> {
                 _MapButton(
                   icon: Icons.my_location,
                   color: AppColors.textDark,
-                  onTap: () => setState(() => _segundos = 0),
+                  onTap: _atualizarLocalizacao,
+                ),
+                const SizedBox(width: 10),
+                _MapButton(
+                  icon: Icons.remove,
+                  color: AppColors.textDark,
+                  onTap: () => _mapController.move(
+                    _mapController.camera.center,
+                    (_mapController.camera.zoom - 1).clamp(3, 18).toDouble(),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _MapButton(
+                  icon: Icons.add,
+                  color: AppColors.textDark,
+                  onTap: () => _mapController.move(
+                    _mapController.camera.center,
+                    (_mapController.camera.zoom + 1).clamp(3, 18).toDouble(),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 _MapButton(
@@ -583,11 +671,7 @@ class _VeiculoCard extends StatelessWidget {
                     ),
                     alignment: Alignment.center,
                     child: Text(
-                      v.nome
-                          .split(' ')
-                          .map((p) => p[0])
-                          .take(2)
-                          .join(),
+                      v.nome.split(' ').map((p) => p[0]).take(2).join(),
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
@@ -677,10 +761,7 @@ class _VeiculoCard extends StatelessWidget {
                   ),
                   const Text(
                     'chegada',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textGray,
-                    ),
+                    style: TextStyle(fontSize: 11, color: AppColors.textGray),
                   ),
                 ],
               ),
@@ -698,10 +779,7 @@ class _VeiculoCard extends StatelessWidget {
                 Container(
                   width: 9,
                   height: 9,
-                  decoration: BoxDecoration(
-                    color: fg,
-                    shape: BoxShape.circle,
-                  ),
+                  decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
                 ),
                 const SizedBox(width: 8),
                 Expanded(

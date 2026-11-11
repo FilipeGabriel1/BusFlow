@@ -159,7 +159,7 @@ class _ConfiguracoesSheetState extends State<_ConfiguracoesSheet> {
               ),
             ),
             const SizedBox(height: 10),
-            const ConfiguracoesCard(),
+            ConfiguracoesCard(onDadosAtualizados: _loadAluno),
             const SizedBox(height: 12),
             const LogoutCard(),
           ],

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../services/motorista_data_store.dart';
@@ -16,10 +19,71 @@ class MotoristaHomeScreen extends StatefulWidget {
 }
 
 class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
+  StreamSubscription<Position>? _locationSubscription;
+  Position? _driverPosition;
+
+  @override
+  void dispose() {
+    _locationSubscription?.cancel();
+    super.dispose();
+  }
+
   void _snack(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _toggleTrip(
+    MotoristaDataStore store,
+    RotaAtribuida route,
+  ) async {
+    if (store.viagemIniciada) {
+      await _locationSubscription?.cancel();
+      _locationSubscription = null;
+      store.encerrarViagem();
+      if (mounted) _snack('${route.linha} encerrada.');
+      return;
+    }
+
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _snack('Ative o serviço de localização para iniciar a viagem.');
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        _snack('Permita o acesso à localização para iniciar a viagem.');
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      setState(() => _driverPosition = position);
+      store.iniciarViagem(route);
+      _locationSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 10,
+            ),
+          ).listen(
+            (updatedPosition) {
+              if (mounted) setState(() => _driverPosition = updatedPosition);
+            },
+            onError: (Object error) {
+              if (mounted) {
+                _snack('A atualização do GPS falhou: $error');
+              }
+            },
+          );
+      _snack('${route.linha} iniciada. Boa viagem!');
+    } catch (error) {
+      if (mounted) _snack('Não foi possível iniciar o GPS: $error');
+    }
   }
 
   @override
@@ -192,7 +256,11 @@ class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            const Icon(Icons.route_outlined, size: 32, color: AppColors.hintGray),
+            const Icon(
+              Icons.route_outlined,
+              size: 32,
+              color: AppColors.hintGray,
+            ),
             const SizedBox(height: 8),
             const Text(
               'Nenhuma viagem ativa',
@@ -234,7 +302,9 @@ class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
       );
     }
 
-    final statusLabel = store.viagemIniciada ? 'Em Andamento' : 'Aguardando Saída';
+    final statusLabel = store.viagemIniciada
+        ? 'Em Andamento'
+        : 'Aguardando Saída';
     final statusColor = store.viagemIniciada
         ? AppColors.green
         : const Color(0xFFF59E0B);
@@ -436,15 +506,7 @@ class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
             height: 46,
             child: ElevatedButton.icon(
               key: const ValueKey('iniciar-viagem-btn'),
-              onPressed: () {
-                if (store.viagemIniciada) {
-                  store.encerrarViagem();
-                  _snack('${rota.linha} encerrada.');
-                } else {
-                  store.iniciarViagem(rota);
-                  _snack('${rota.linha} iniciada. Boa viagem!');
-                }
-              },
+              onPressed: () => _toggleTrip(store, rota),
               style: ElevatedButton.styleFrom(
                 backgroundColor: store.viagemIniciada
                     ? const Color(0xFFDC2626)
@@ -455,9 +517,7 @@ class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              icon: Icon(
-                store.viagemIniciada ? Icons.stop : Icons.play_arrow,
-              ),
+              icon: Icon(store.viagemIniciada ? Icons.stop : Icons.play_arrow),
               label: Text(
                 store.viagemIniciada ? 'Encerrar Viagem' : 'Iniciar Viagem',
                 style: const TextStyle(
@@ -477,9 +537,7 @@ class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
     final total = MotoristaDataStore.capacidadeTotal;
     final percent = store.lotacaoFraction;
     final pctLabel = '${(percent * 100).round()}% ${store.statusLotacao}';
-    final barColor = percent >= 0.9
-        ? const Color(0xFFF59E0B)
-        : AppColors.green;
+    final barColor = percent >= 0.9 ? const Color(0xFFF59E0B) : AppColors.green;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -535,10 +593,7 @@ class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
             children: [
               Text(
                 '$ocupados de $total assentos ocupados',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textGray,
-                ),
+                style: const TextStyle(fontSize: 12, color: AppColors.textGray),
               ),
               Text(
                 '${store.assentosLivres} livres',
@@ -601,9 +656,7 @@ class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
                     width: 22,
                     height: 22,
                     decoration: BoxDecoration(
-                      color: entries[i].value
-                          ? AppColors.green
-                          : Colors.white,
+                      color: entries[i].value ? AppColors.green : Colors.white,
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
                         color: entries[i].value
@@ -754,10 +807,7 @@ class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.badgeBg,
                   borderRadius: BorderRadius.circular(20),
@@ -787,10 +837,15 @@ class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
             child: Stack(
               children: [
                 FlutterMap(
-                  options: const MapOptions(
-                    initialCenter: LatLng(-8.0600, -34.9300),
+                  options: MapOptions(
+                    initialCenter: _driverPosition == null
+                        ? const LatLng(-8.0600, -34.9300)
+                        : LatLng(
+                            _driverPosition!.latitude,
+                            _driverPosition!.longitude,
+                          ),
                     initialZoom: 13.2,
-                    interactionOptions: InteractionOptions(
+                    interactionOptions: const InteractionOptions(
                       flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                     ),
                   ),
@@ -817,6 +872,20 @@ class _MotoristaHomeScreenState extends State<MotoristaHomeScreen> {
                     ),
                     MarkerLayer(
                       markers: [
+                        if (_driverPosition != null)
+                          Marker(
+                            point: LatLng(
+                              _driverPosition!.latitude,
+                              _driverPosition!.longitude,
+                            ),
+                            width: 40,
+                            height: 40,
+                            child: const Icon(
+                              Icons.my_location,
+                              color: AppColors.flowBlue,
+                              size: 28,
+                            ),
+                          ),
                         Marker(
                           point: const LatLng(-8.0480, -34.9050),
                           width: 30,

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/app_settings.dart';
 import '../../services/admin_storage.dart';
+import '../../services/supabase_auth_service.dart';
 import '../../theme.dart';
 import '../../widgets/registration_widgets.dart';
 import '../admin/admin_main_screen.dart';
@@ -17,6 +20,7 @@ class _AdminRegistrationScreenState extends State<AdminRegistrationScreen> {
   bool _sigilo = false;
   bool _lgpd = false;
   bool _saving = false;
+  bool _biometricOnSignup = false;
 
   final _cpfMascara = _CampoMascara(_formatarCpf);
   String? _cargoSel;
@@ -359,16 +363,64 @@ class _AdminRegistrationScreenState extends State<AdminRegistrationScreen> {
       return;
     }
 
+    if (_biometricOnSignup) {
+      try {
+        final enabled = await AppSettings.instance.enableBiometrics();
+        if (!enabled) {
+          _snack(
+            'Não foi possível confirmar a biometria. Desative a opção ou tente novamente.',
+          );
+          return;
+        }
+      } catch (error) {
+        if (mounted) _snack('Não foi possível ativar biometria: $error');
+        return;
+      }
+    }
+
     setState(() => _saving = true);
-    await AdminStorage.saveAdmin(
-      nome: _nome.text.trim(),
-      email: _email.text.trim(),
-      cpf: _cpf.text.trim(),
-      orgao: _orgao.text.trim(),
-      cargo: _cargoSel!,
-      chave: _chave.text.trim(),
-      senha: _senha.text,
-    );
+    try {
+      if (SupabaseAuthService.isConfigured) {
+        final signedIn = await SupabaseAuthService.signUp(
+          email: _email.text,
+          password: _senha.text,
+          role: BusFlowRole.admin,
+          profileData: {
+            'nome': _nome.text.trim(),
+            'email': _email.text.trim().toLowerCase(),
+            'cpf': _cpf.text.trim(),
+            'orgao': _orgao.text.trim(),
+            'cargo': _cargoSel!,
+          },
+        );
+        if (!signedIn) {
+          if (!mounted) return;
+          setState(() => _saving = false);
+          _snack(
+            'Conta criada. Confirme o e-mail enviado e depois entre com sua senha.',
+          );
+          return;
+        }
+      } else {
+        await AdminStorage.saveAdmin(
+          nome: _nome.text.trim(),
+          email: _email.text.trim(),
+          cpf: _cpf.text.trim(),
+          orgao: _orgao.text.trim(),
+          cargo: _cargoSel!,
+          chave: _chave.text.trim(),
+          senha: _senha.text,
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _snack(
+        'Não foi possível criar a conta: '
+        '${error is AuthException ? error.message : error}',
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() => _saving = false);
     Navigator.of(context).pushAndRemoveUntil(
@@ -643,7 +695,10 @@ class _AdminRegistrationScreenState extends State<AdminRegistrationScreen> {
               const SizedBox(height: 14),
               LabeledField(
                 label: 'Confirmar Senha',
-                child: PasswordField(hint: 'Repita a senha', controller: _senhaConfirm),
+                child: PasswordField(
+                  hint: 'Repita a senha',
+                  controller: _senhaConfirm,
+                ),
               ),
               const SizedBox(height: 16),
               Row(
@@ -728,6 +783,18 @@ class _AdminRegistrationScreenState extends State<AdminRegistrationScreen> {
                     ),
                   ],
                 ),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _biometricOnSignup,
+                activeColor: AppColors.primary,
+                title: const Text('Ativar biometria neste aparelho'),
+                subtitle: const Text(
+                  'A confirmação é feita pelo sistema do dispositivo.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                onChanged: (value) =>
+                    setState(() => _biometricOnSignup = value ?? false),
               ),
               const SizedBox(height: 24),
               PrimarySubmitButton(

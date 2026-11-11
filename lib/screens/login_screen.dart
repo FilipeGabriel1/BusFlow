@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/app_settings.dart';
 import '../services/admin_storage.dart';
 import '../services/api_service.dart';
 import '../services/motorista_storage.dart';
 import '../services/student_storage.dart';
+import '../services/supabase_auth_service.dart';
 import '../theme.dart';
-import '../widgets/bottom_nav.dart';
 import '../widgets/logo.dart';
 import 'admin/admin_main_screen.dart';
 import 'aluno/aluno_main_screen.dart';
 import 'motorista/motorista_main_screen.dart';
+import 'password_recovery_screen.dart';
 import 'profile_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -22,6 +25,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _loginTab = true;
+  bool _signingIn = false;
 
   final _email = TextEditingController();
   final _senha = TextEditingController();
@@ -39,11 +43,85 @@ class _LoginScreenState extends State<LoginScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _entrarComBiometria() async {
+    try {
+      final authenticated = await AppSettings.instance.authenticateBiometrics();
+      if (!authenticated) {
+        _snack('A autenticação biométrica não foi concluída.');
+        return;
+      }
+      if (SupabaseAuthService.isConfigured) {
+        final role = await SupabaseAuthService.currentRole();
+        if (!mounted) return;
+        if (role == null) {
+          _snack(
+            'Entre com e-mail e senha para validar a sessão neste aparelho.',
+          );
+          return;
+        }
+        _openRole(role);
+        return;
+      }
+      if (!mounted) return;
+      final Widget destination;
+      if (await AdminStorage.isRegistered()) {
+        destination = const AdminMainScreen();
+      } else if (await MotoristaStorage.isRegistered()) {
+        destination = const MotoristaMainScreen();
+      } else if (await StudentStorage.isRegistered()) {
+        destination = const AlunoMainScreen();
+      } else {
+        _snack('Nenhuma conta cadastrada neste aparelho.');
+        return;
+      }
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (_) => destination),
+        (route) => false,
+      );
+    } catch (error) {
+      if (mounted) {
+        _snack('Não foi possível autenticar com biometria: $error');
+      }
+    }
+  }
+
   Future<void> _entrar() async {
     final identificador = _email.text.trim();
     final senha = _senha.text;
     if (identificador.isEmpty || senha.isEmpty) {
       _snack('Informe seu e-mail/CPF e senha para entrar.');
+      return;
+    }
+    if (SupabaseAuthService.isConfigured) {
+      if (!identificador.contains('@')) {
+        _snack('Para entrar em outros aparelhos, use o e-mail cadastrado.');
+        return;
+      }
+      setState(() => _signingIn = true);
+      try {
+        final role = await SupabaseAuthService.signIn(
+          email: identificador,
+          password: senha,
+        );
+        if (mounted) _openRole(role);
+      } on AuthException catch (error) {
+        if (!mounted) return;
+        if (error.code == 'email_not_confirmed') {
+          _snack('Confirme seu e-mail antes de entrar.');
+        } else if (error.code == 'invalid_credentials' ||
+            error.code == 'user_not_found') {
+          _snack(
+            'E-mail ou senha incorretos. Tente novamente ou toque em “Esqueceu a senha?”.',
+          );
+        } else {
+          _snack('Não foi possível entrar: ${error.message}');
+        }
+      } catch (error) {
+        if (mounted) _snack('Não foi possível conectar ao banco: $error');
+      } finally {
+        if (mounted) setState(() => _signingIn = false);
+      }
       return;
     }
     final idNormal = identificador.toLowerCase();
@@ -205,7 +283,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     bool senhaOk(Map<String, String> dados) {
       final salva = dados['senha'] ?? '';
-      return salva.isEmpty || salva == senha;
+      return salva.isNotEmpty && salva == senha;
     }
 
     if (await AdminStorage.isRegistered()) {
@@ -213,7 +291,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (corresponde(dados)) {
         if (!mounted) return;
         if (!senhaOk(dados)) {
-          _snack('Senha incorreta.');
+          _snack(
+            'Senha incorreta. Tente novamente ou toque em “Esqueceu a senha?”.',
+          );
           return;
         }
         Navigator.of(context).pushAndRemoveUntil(
@@ -228,7 +308,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (corresponde(dados)) {
         if (!mounted) return;
         if (!senhaOk(dados)) {
-          _snack('Senha incorreta.');
+          _snack(
+            'Senha incorreta. Tente novamente ou toque em “Esqueceu a senha?”.',
+          );
           return;
         }
         Navigator.of(context).pushAndRemoveUntil(
@@ -243,7 +325,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (corresponde(dados)) {
         if (!mounted) return;
         if (!senhaOk(dados)) {
-          _snack('Senha incorreta.');
+          _snack(
+            'Senha incorreta. Tente novamente ou toque em “Esqueceu a senha?”.',
+          );
           return;
         }
         Navigator.of(context).pushAndRemoveUntil(
@@ -257,6 +341,18 @@ class _LoginScreenState extends State<LoginScreen> {
     _snack('Conta não encontrada. Crie sua conta para continuar.');
   }
 
+  void _openRole(BusFlowRole role) {
+    final Widget screen = switch (role) {
+      BusFlowRole.admin => const AdminMainScreen(),
+      BusFlowRole.motorista => const MotoristaMainScreen(),
+      BusFlowRole.aluno => const AlunoMainScreen(),
+    };
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute<void>(builder: (_) => screen),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -264,126 +360,52 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildTopBar(),
-            const SizedBox(height: 18),
-            _buildBackRow(),
-            const SizedBox(height: 22),
-            Center(child: _buildLogoCard()),
-            const SizedBox(height: 24),
-            _buildTitle(),
-            const SizedBox(height: 22),
-            _buildTabs(),
-            const SizedBox(height: 22),
-            _buildEmailField(),
-            const SizedBox(height: 16),
-            _buildPasswordField(),
-            const SizedBox(height: 22),
-            _buildPrimaryButton(),
-            const SizedBox(height: 20),
-            _buildDivider(),
-            const SizedBox(height: 16),
-            _buildGovButton(),
-            const SizedBox(height: 16),
-            _buildRegisterCard(),
-            const SizedBox(height: 20),
-            _buildFooter(),
-          ],
-        ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(child: _buildLogoCard()),
+              const SizedBox(height: 24),
+              _buildTitle(),
+              const SizedBox(height: 22),
+              _buildTabs(),
+              const SizedBox(height: 22),
+              _buildEmailField(),
+              const SizedBox(height: 16),
+              _buildPasswordField(),
+              const SizedBox(height: 22),
+              _buildPrimaryButton(),
+              ListenableBuilder(
+                listenable: AppSettings.instance,
+                builder: (context, _) => AppSettings.instance.biometricEnabled
+                    ? TextButton.icon(
+                        key: const ValueKey('login-biometric'),
+                        onPressed: _entrarComBiometria,
+                        icon: const Icon(Icons.fingerprint),
+                        label: const Text('Entrar com biometria'),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              const SizedBox(height: 20),
+              _buildDivider(),
+              const SizedBox(height: 16),
+              _buildGovButton(),
+              const SizedBox(height: 16),
+              _buildRegisterCard(),
+              if (!SupabaseAuthService.isConfigured) ...[
+                const SizedBox(height: 12),
+                const Text(
+                  'Modo local: os cadastros ficam apenas neste aparelho. '
+                  'Configure o Supabase para sincronizar entre dispositivos.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: AppColors.textGray),
+                ),
+              ],
+              const SizedBox(height: 20),
+              _buildFooter(),
+            ],
+          ),
         ),
       ),
-      bottomNavigationBar: const BusFlowBottomNav(),
-    );
-  }
-
-  Widget _buildTopBar() {
-    return Row(
-      children: [
-        const BusFlowMark(size: 22),
-        const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
-              'BusFlow',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: AppColors.primaryDark,
-              ),
-            ),
-            Text(
-              'Início',
-              style: TextStyle(fontSize: 11, color: AppColors.textGray),
-            ),
-          ],
-        ),
-        const Spacer(),
-        const Icon(
-          Icons.notifications_none,
-          size: 26,
-          color: AppColors.textDark,
-        ),
-        const SizedBox(width: 18),
-        const BusFlowAvatar(radius: 16),
-      ],
-    );
-  }
-
-  Widget _buildBackRow() {
-    return Row(
-      children: [
-        GestureDetector(
-          onTap: () => Navigator.of(context).maybePop(),
-          child: const Row(
-            children: [
-              Icon(
-                Icons.arrow_back_ios_new,
-                size: 14,
-                color: AppColors.primary,
-              ),
-              SizedBox(width: 4),
-              Text(
-                'Voltar',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const Spacer(),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.badgeBg,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.badgeBorder),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.circle, size: 8, color: AppColors.greenDot),
-              SizedBox(width: 6),
-              Text(
-                'PASSAPORTE ATIVO',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.green,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        const BusFlowAvatar(radius: 13),
-      ],
     );
   }
 
@@ -503,10 +525,7 @@ class _LoginScreenState extends State<LoginScreen> {
           style: const TextStyle(fontSize: 14, color: AppColors.textDark),
           decoration: InputDecoration(
             hintText: 'seu@email.com ou 000.000.000-00',
-            hintStyle: const TextStyle(
-              fontSize: 14,
-              color: AppColors.hintGray,
-            ),
+            hintStyle: const TextStyle(fontSize: 14, color: AppColors.hintGray),
             prefixIcon: const Icon(
               Icons.mail_outline,
               size: 20,
@@ -551,8 +570,10 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
             GestureDetector(
-              onTap: () => _snack(
-                'Link de recuperação enviado para o e-mail cadastrado.',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ForgotPasswordScreen(),
+                ),
               ),
               child: const Text(
                 'Esqueceu a senha?',
@@ -639,7 +660,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return SizedBox(
       height: 54,
       child: ElevatedButton(
-        onPressed: _entrar,
+        onPressed: _signingIn ? null : _entrar,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,

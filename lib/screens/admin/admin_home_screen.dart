@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 
 import '../../services/admin_data_store.dart';
+import '../../services/admin_report_service.dart';
 import '../../theme.dart';
 import '../../widgets/admin_top_bar.dart';
 
 class AdminHomeScreen extends StatefulWidget {
-  const AdminHomeScreen({
-    super.key,
-    this.onOpenFrota,
-    this.onOpenUsuarios,
-  });
+  const AdminHomeScreen({super.key, this.onOpenFrota, this.onOpenUsuarios});
 
   final VoidCallback? onOpenFrota;
   final VoidCallback? onOpenUsuarios;
@@ -23,6 +21,56 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _emitReport(AdminDataStore store) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text(
+                'Relatório geral em PDF',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_outlined),
+              title: const Text('Visualizar / Imprimir'),
+              onTap: () => Navigator.pop(context, 'print'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: const Text('Enviar para outro aplicativo'),
+              onTap: () => Navigator.pop(context, 'share'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null) return;
+    try {
+      final bytes = await AdminReportService.createPdf(store);
+      if (action == 'print') {
+        await Printing.layoutPdf(
+          onLayout: (_) async => bytes,
+          name: 'busflow-relatorio-geral.pdf',
+        );
+      } else {
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename: 'busflow-relatorio-geral.pdf',
+          subject: 'Relatório geral BusFlow',
+          body: 'Relatório geral gerado pelo BusFlow.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        _snack('Não foi possível gerar ou compartilhar o PDF: $error');
+      }
+    }
   }
 
   static String _fmt(int n) {
@@ -100,7 +148,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 height: 48,
                 child: OutlinedButton.icon(
                   key: const ValueKey('emitir-relatorio'),
-                  onPressed: () => _snack(store.emitirRelatorio()),
+                  onPressed: () => _emitReport(store),
                   icon: const Icon(
                     Icons.download_outlined,
                     size: 18,
@@ -279,8 +327,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _buildViagensRealizadas(AdminDataStore store) {
-    final max = store.viagensSemana
-        .fold<int>(0, (a, b) => b > a ? b : a);
+    final max = store.viagensSemana.fold<int>(0, (a, b) => b > a ? b : a);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -317,10 +364,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 decoration: BoxDecoration(
                   color: AppColors.badgeBg,
                   borderRadius: BorderRadius.circular(8),
@@ -408,10 +452,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             const SizedBox(width: 8),
             if (pendentes.isNotEmpty)
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 7,
-                  vertical: 3,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFEE2E2),
                   borderRadius: BorderRadius.circular(8),
@@ -540,10 +581,7 @@ class _MetricCard extends StatelessWidget {
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 3,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
                   color: badgeCor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6),

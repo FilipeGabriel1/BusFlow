@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/app_settings.dart';
 import '../../services/motorista_storage.dart';
+import '../../services/supabase_auth_service.dart';
 import '../../theme.dart';
+import '../../widgets/profile_photo_picker.dart';
 import '../../widgets/registration_widgets.dart';
 import '../motorista/motorista_main_screen.dart';
 
@@ -17,11 +21,13 @@ class _MotoristaRegistrationScreenState
     extends State<MotoristaRegistrationScreen> {
   final Set<int> _turnos = {1};
   bool _saving = false;
+  bool _biometricOnSignup = false;
   bool _consultandoCnh = false;
   String? _categoriaIdentificada;
   String _cnhConsultada = '';
   int _cnhConsultaId = 0;
   String? _empresa;
+  String _profilePhoto = '';
 
   final _nome = TextEditingController();
   final _email = TextEditingController();
@@ -231,18 +237,70 @@ class _MotoristaRegistrationScreenState
       return;
     }
 
+    if (_biometricOnSignup) {
+      try {
+        final enabled = await AppSettings.instance.enableBiometrics();
+        if (!enabled) {
+          _snack(
+            'Não foi possível confirmar a biometria. Desative a opção ou tente novamente.',
+          );
+          return;
+        }
+      } catch (error) {
+        if (mounted) _snack('Não foi possível ativar biometria: $error');
+        return;
+      }
+    }
+
     setState(() => _saving = true);
-    await MotoristaStorage.saveMotorista(
-      nome: _nome.text.trim(),
-      email: _email.text.trim(),
-      cpf: _cpf.text.trim(),
-      telefone: _telefone.text.trim(),
-      cnh: _cnh.text.trim(),
-      categoria: _categoriaIdentificada!,
-      turno: _turnoData[[..._turnos].first].$2,
-      empresa: _empresa ?? '',
-      senha: _senha.text,
-    );
+    try {
+      if (SupabaseAuthService.isConfigured) {
+        final signedIn = await SupabaseAuthService.signUp(
+          email: _email.text,
+          password: _senha.text,
+          role: BusFlowRole.motorista,
+          profileData: {
+            'nome': _nome.text.trim(),
+            'email': _email.text.trim().toLowerCase(),
+            'cpf': _cpf.text.trim(),
+            'telefone': _telefone.text.trim(),
+            'cnh': _cnh.text.trim(),
+            'categoria': _categoriaIdentificada!,
+            'turno': _turnoData[[..._turnos].first].$2,
+            'empresa': _empresa ?? '',
+          },
+        );
+        if (!signedIn) {
+          if (!mounted) return;
+          setState(() => _saving = false);
+          _snack(
+            'Conta criada. Confirme o e-mail enviado e depois entre com sua senha.',
+          );
+          return;
+        }
+      } else {
+        await MotoristaStorage.saveMotorista(
+          nome: _nome.text.trim(),
+          email: _email.text.trim(),
+          cpf: _cpf.text.trim(),
+          telefone: _telefone.text.trim(),
+          cnh: _cnh.text.trim(),
+          categoria: _categoriaIdentificada!,
+          turno: _turnoData[[..._turnos].first].$2,
+          empresa: _empresa ?? '',
+          senha: _senha.text,
+          profilePhoto: _profilePhoto,
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _snack(
+        'Não foi possível criar a conta: '
+        '${error is AuthException ? error.message : error}',
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() => _saving = false);
     Navigator.of(context).pushAndRemoveUntil(
@@ -518,6 +576,18 @@ class _MotoristaRegistrationScreenState
                 title: 'Validação de Segurança e Trafegabilidade',
                 body: 'O cadastro passará por validação cadastral da fiscalização de trânsito em até 24 horas. Você receberá notificação por e-mail e SMS assim que aprovado.',
               ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _biometricOnSignup,
+                activeColor: AppColors.primary,
+                title: const Text('Ativar biometria neste aparelho'),
+                subtitle: const Text(
+                  'A confirmação é feita pelo sistema do dispositivo.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                onChanged: (value) =>
+                    setState(() => _biometricOnSignup = value ?? false),
+              ),
               const SizedBox(height: 24),
               PrimarySubmitButton(
                 label: _saving ? 'Salvando...' : 'Cadastrar Motorista',
@@ -535,46 +605,11 @@ class _MotoristaRegistrationScreenState
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 96,
-          height: 96,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 3),
-                ),
-                child: const Icon(
-                  Icons.person,
-                  size: 44,
-                  color: AppColors.textGray,
-                ),
-              ),
-              Positioned(
-                right: 0,
-                bottom: 4,
-                child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2.5),
-                  ),
-                  child: const Icon(
-                    Icons.photo_camera,
-                    size: 14,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ),
+        ProfilePhotoPicker(
+          photo: _profilePhoto,
+          onChanged: (photo) => setState(() => _profilePhoto = photo),
+          size: 88,
+          label: _profilePhoto.isEmpty ? 'Adicionar foto' : 'Trocar foto',
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -592,7 +627,7 @@ class _MotoristaRegistrationScreenState
               ),
               const SizedBox(height: 6),
               const Text(
-                'Para identificação dos estudantes no momento do embarque.',
+                'Escolha uma imagem da galeria ou tire uma foto na hora.',
                 style: TextStyle(
                   fontSize: 12.5,
                   height: 1.45,

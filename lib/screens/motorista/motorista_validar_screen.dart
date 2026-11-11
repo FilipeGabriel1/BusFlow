@@ -1,62 +1,24 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../services/motorista_data_store.dart';
 import '../../theme.dart';
 import '../../widgets/logo.dart';
 
 class MotoristaValidarScreen extends StatefulWidget {
-  const MotoristaValidarScreen({super.key});
+  const MotoristaValidarScreen({super.key, this.active = false});
+
+  final bool active;
 
   @override
-  State<MotoristaValidarScreen> createState() =>
-      _MotoristaValidarScreenState();
+  State<MotoristaValidarScreen> createState() => _MotoristaValidarScreenState();
 }
 
 class _MotoristaValidarScreenState extends State<MotoristaValidarScreen> {
   bool _embarqueAtivo = true;
   bool _scannerLendo = false;
-  int _leituraSeq = 0;
-  final _rand = Random();
-
-  static const _cursos = [
-    'Ciência da Computação',
-    'Engenharia Civil',
-    'Direito',
-    'Administração',
-    'Medicina',
-    'Arquitetura e Urbanismo',
-    'Pedagogia',
-    'Engenharia Elétrica',
-  ];
-  static const _portoes = ['Portão 03', 'Portão 05', 'Portão 10', 'Terminal Sul'];
-  static const _cores = [
-    (Color(0xFFDBEAFE), Color(0xFF17457F)),
-    (Color(0xFFE0E7FF), Color(0xFF4F46E5)),
-    (Color(0xFFDCFCE7), Color(0xFF16A34A)),
-    (Color(0xFFFEF3C7), Color(0xFFF59E0B)),
-    (Color(0xFFFCE7F3), Color(0xFFDB2777)),
-  ];
-
-  ({String iniciais, String nome, String ra, String curso, String portao, Color cor, Color corTexto})
-  _gerarLeitura() {
-    _leituraSeq++;
-    final nome = 'Aluno ${_leituraSeq.toString().padLeft(3, '0')}';
-    final ra = 'RA ${DateTime.now().year}-${_leituraSeq.toString().padLeft(4, '0')}';
-    final curso = _cursos[_rand.nextInt(_cursos.length)];
-    final portao = _portoes[_rand.nextInt(_portoes.length)];
-    final (cor, corTexto) = _cores[_rand.nextInt(_cores.length)];
-    return (
-      iniciais: 'A${_leituraSeq % 10}',
-      nome: nome,
-      ra: ra,
-      curso: curso,
-      portao: portao,
-      cor: cor,
-      corTexto: corTexto,
-    );
-  }
+  String? _studentQrId;
+  String? _lastRejectedValue;
 
   void _snack(String message, {Color? cor}) {
     ScaffoldMessenger.of(context)
@@ -73,47 +35,103 @@ class _MotoristaValidarScreenState extends State<MotoristaValidarScreen> {
   void _aprovarValidacao() {
     final store = MotoristaDataStore.instance;
     if (!_embarqueAtivo) {
-      _snack('Embarque pausado. Reative para validar.',
-          cor: const Color(0xFFF59E0B));
+      _snack(
+        'Embarque pausado. Reative para validar.',
+        cor: const Color(0xFFF59E0B),
+      );
       return;
     }
     if (store.lotacao >= MotoristaDataStore.capacidadeTotal) {
-      _snack('Ônibus lotado. Não é possível validar novos embarques.',
-          cor: const Color(0xFFDC2626));
+      _snack(
+        'Ônibus lotado. Não é possível validar novos embarques.',
+        cor: const Color(0xFFDC2626),
+      );
+      return;
+    }
+    final qrId = _studentQrId;
+    if (qrId == null) {
+      _snack(
+        'Leia o QR Code da carteirinha antes de aprovar.',
+        cor: const Color(0xFFF59E0B),
+      );
       return;
     }
     setState(() => _scannerLendo = true);
     Future.delayed(const Duration(milliseconds: 600), () {
       if (!mounted) return;
-      final dados = _gerarLeitura();
       final ok = store.validarEmbarque(
-        iniciais: dados.iniciais,
-        nomePassageiro: dados.nome,
-        ra: dados.ra,
-        curso: dados.curso,
-        portao: dados.portao,
-        cor: dados.cor,
-        corTexto: dados.corTexto,
+        iniciais: 'AL',
+        nomePassageiro: 'Aluno ${qrId.substring(0, 8)}',
+        ra: 'Passe ${qrId.substring(0, 8)}',
+        curso: 'Carteirinha BusFlow',
+        portao: 'Embarque QR',
+        cor: const Color(0xFFDBEAFE),
+        corTexto: const Color(0xFF17457F),
       );
-      setState(() => _scannerLendo = false);
+      setState(() {
+        _scannerLendo = false;
+        if (ok) _studentQrId = null;
+      });
       if (ok) {
-        _snack('Embarque validado: ${dados.nome} ✓', cor: AppColors.green);
+        _snack('QR Code BusFlow validado ✓', cor: AppColors.green);
       } else {
-        _snack('Ônibus lotado. Validação recusada.',
-            cor: const Color(0xFFDC2626));
+        _snack(
+          'Ônibus lotado. Validação recusada.',
+          cor: const Color(0xFFDC2626),
+        );
       }
     });
   }
 
   void _simularRecusa() {
+    if (_studentQrId == null) {
+      _snack(
+        'Leia um QR Code antes de recusar a validação.',
+        cor: const Color(0xFFF59E0B),
+      );
+      return;
+    }
     setState(() => _scannerLendo = true);
     Future.delayed(const Duration(milliseconds: 600), () {
       if (!mounted) return;
       MotoristaDataStore.instance.recusarEmbarque();
-      setState(() => _scannerLendo = false);
-      _snack('Passe recusado: carteirinha inválida ou vencida.',
-          cor: const Color(0xFFDC2626));
+      setState(() {
+        _scannerLendo = false;
+        _studentQrId = null;
+      });
+      _snack(
+        'Passe recusado: carteirinha inválida ou vencida.',
+        cor: const Color(0xFFDC2626),
+      );
     });
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_studentQrId != null || _scannerLendo) return;
+    for (final barcode in capture.barcodes) {
+      final value = barcode.rawValue;
+      final match = value == null
+          ? null
+          : RegExp(
+              r'^BUSFLOW:STUDENT:([a-f0-9-]{36})$',
+              caseSensitive: false,
+            ).firstMatch(value);
+      if (match != null) {
+        setState(() => _studentQrId = match.group(1));
+        _snack(
+          'QR Code BusFlow lido. Revise e aprove o embarque.',
+          cor: AppColors.green,
+        );
+        return;
+      }
+      if (value != null && value != _lastRejectedValue) {
+        _lastRejectedValue = value;
+        _snack(
+          'QR Code incompatível com a carteirinha BusFlow.',
+          cor: const Color(0xFFDC2626),
+        );
+      }
+    }
   }
 
   @override
@@ -488,9 +506,7 @@ class _MotoristaValidarScreenState extends State<MotoristaValidarScreen> {
               minHeight: 9,
               backgroundColor: AppColors.border,
               valueColor: AlwaysStoppedAnimation<Color>(
-                percentual >= 0.9
-                    ? const Color(0xFFF59E0B)
-                    : AppColors.green,
+                percentual >= 0.9 ? const Color(0xFFF59E0B) : AppColors.green,
               ),
             ),
           ),
@@ -598,6 +614,23 @@ class _MotoristaValidarScreenState extends State<MotoristaValidarScreen> {
             ),
             child: Stack(
               children: [
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: widget.active
+                        ? MobileScanner(onDetect: _onDetect)
+                        : const ColoredBox(
+                            color: Color(0xFF0F172A),
+                            child: Center(
+                              child: Text(
+                                'Abra a aba Validar para ativar a câmera',
+                                style: TextStyle(color: Colors.white),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
                 Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -615,7 +648,11 @@ class _MotoristaValidarScreenState extends State<MotoristaValidarScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        _scannerLendo ? 'LENDO...' : 'APONTE A CARTEIRINHA',
+                        _scannerLendo
+                            ? 'VALIDANDO...'
+                            : _studentQrId != null
+                            ? 'QR CODE LIDO'
+                            : 'APONTE A CARTEIRINHA',
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w800,
@@ -658,7 +695,7 @@ class _MotoristaValidarScreenState extends State<MotoristaValidarScreen> {
                       Icon(Icons.circle, size: 7, color: AppColors.greenDot),
                       SizedBox(width: 5),
                       Text(
-                        'Validador Óptico Ativo • BusFlow Sensor v2.4',
+                        'Câmera do dispositivo ativa',
                         style: TextStyle(
                           fontSize: 10,
                           color: Color(0xFF93C5FD),
@@ -672,7 +709,7 @@ class _MotoristaValidarScreenState extends State<MotoristaValidarScreen> {
           ),
           const SizedBox(height: 13),
           const Text(
-            'SIMULAÇÃO DE LEITURA EM TEMPO REAL',
+            'LEITURA DE QR CODE EM TEMPO REAL',
             style: TextStyle(
               fontSize: 9.5,
               fontWeight: FontWeight.w800,
@@ -727,7 +764,7 @@ class _MotoristaValidarScreenState extends State<MotoristaValidarScreen> {
                     ),
                     icon: const Icon(Icons.cancel_outlined, size: 17),
                     label: const Text(
-                      'Simular Recusa',
+                      'Recusar leitura',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
@@ -758,11 +795,7 @@ class _MotoristaValidarScreenState extends State<MotoristaValidarScreen> {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.groups,
-                size: 17,
-                color: AppColors.primary,
-              ),
+              const Icon(Icons.groups, size: 17, color: AppColors.primary),
               const SizedBox(width: 7),
               const Expanded(
                 child: Text(
@@ -993,10 +1026,7 @@ class _EmbarqueRow extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               passageiro.portao,
-              style: const TextStyle(
-                fontSize: 10,
-                color: AppColors.hintGray,
-              ),
+              style: const TextStyle(fontSize: 10, color: AppColors.hintGray),
             ),
           ],
         ),

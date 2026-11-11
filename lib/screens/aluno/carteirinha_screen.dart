@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../services/student_storage.dart';
 import '../../theme.dart';
@@ -18,6 +19,7 @@ class _CarteirinhaScreenState extends State<CarteirinhaScreen> {
   _CredencialEstado _estado = _CredencialEstado.ativa;
   String _nome = 'Ana Carolina Costa';
   String _ra = '2024.1.08849';
+  String _qrId = '';
 
   static const _labels = {
     _CredencialEstado.ativa: 'Ativa (Padrão)',
@@ -46,9 +48,20 @@ class _CarteirinhaScreenState extends State<CarteirinhaScreen> {
       setState(() {
         if (aluno['nome']?.isNotEmpty == true) _nome = aluno['nome']!;
         if (aluno['ra']?.isNotEmpty == true) _ra = aluno['ra']!;
+        _qrId = aluno['qrId'] ?? '';
       });
-    } catch (_) {
-      // Sem preferências disponíveis — mantém os dados de demonstração.
+      if (_qrId.isEmpty) {
+        final qrId = await StudentStorage.getOrCreateQrId();
+        if (mounted) setState(() => _qrId = qrId);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Não foi possível carregar a carteirinha: $error'),
+          ),
+        );
+      }
     }
   }
 
@@ -114,9 +127,7 @@ class _CarteirinhaScreenState extends State<CarteirinhaScreen> {
           ),
         ),
         const SizedBox(width: 6),
-        Expanded(
-          child: const HomeTopBar(subtitle: 'Carteirinha'),
-        ),
+        Expanded(child: const HomeTopBar(subtitle: 'Carteirinha')),
       ],
     );
   }
@@ -420,7 +431,10 @@ class _CarteirinhaScreenState extends State<CarteirinhaScreen> {
               ),
               SizedBox(width: 10),
               Expanded(
-                child: _InfoBox(label: 'TURNO / JANELA', value: 'Noturno (18h - 2...'),
+                child: _InfoBox(
+                  label: 'TURNO / JANELA',
+                  value: 'Noturno (18h - 2...',
+                ),
               ),
             ],
           ),
@@ -571,7 +585,13 @@ class _CarteirinhaScreenState extends State<CarteirinhaScreen> {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                const CustomPaint(size: Size(150, 150), painter: _QrPainter()),
+                if (_qrId.isNotEmpty)
+                  QrImageView(
+                    data: 'BUSFLOW:STUDENT:$_qrId',
+                    size: 150,
+                    backgroundColor: Colors.white,
+                    errorCorrectionLevel: QrErrorCorrectLevel.H,
+                  ),
                 Container(
                   width: 36,
                   height: 36,
@@ -954,45 +974,4 @@ class _EmbarqueRow extends StatelessWidget {
       ),
     );
   }
-}
-
-class _QrPainter extends CustomPainter {
-  const _QrPainter();
-
-  static const _n = 21;
-
-  bool _dark(int i, int j) {
-    bool finder(int fi, int fj) {
-      final di = i - fi;
-      final dj = j - fj;
-      if (di < 0 || di > 6 || dj < 0 || dj > 6) return false;
-      final ring = di == 0 || di == 6 || dj == 0 || dj == 6;
-      final core = di >= 2 && di <= 4 && dj >= 2 && dj <= 4;
-      return ring || core;
-    }
-
-    if (finder(0, 0) || finder(14, 0) || finder(0, 14)) return true;
-    if (i >= 7 && i <= 13 && j >= 7 && j <= 13) return false;
-    final h =
-        (i * 73856093) ^ (j * 19349663) ^ ((i + j) * 83492791) ^ 0x9E3779B9;
-    return (h & 0x7fffffff) % 100 < 46;
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cell = size.width / _n;
-    final paint = Paint()..color = const Color(0xFF0E2A4F);
-    for (var i = 0; i < _n; i++) {
-      for (var j = 0; j < _n; j++) {
-        if (!_dark(i, j)) continue;
-        canvas.drawRect(
-          Rect.fromLTWH(i * cell, j * cell, cell * 0.92, cell * 0.92),
-          paint,
-        );
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_QrPainter oldDelegate) => false;
 }

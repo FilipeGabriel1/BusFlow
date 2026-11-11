@@ -47,7 +47,7 @@ class _MotoristaMainScreenState extends State<MotoristaMainScreen> {
           children: [
             MotoristaHomeScreen(onOpenRotas: () => _goTo(1)),
             const MotoristaRotasScreen(),
-            const MotoristaValidarScreen(),
+            MotoristaValidarScreen(active: _index == 2),
             const MotoristaAlertasScreen(),
             const MotoristaPerfilScreen(),
           ],

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'services/app_settings.dart';
+
 class AppColors {
   AppColors._();
 
@@ -17,7 +19,9 @@ class AppColors {
   static const border = Color(0xFFE2E8F0);
   static const fieldBg = Color(0xFFF8FAFC);
   static const tabBg = Color(0xFFF1F5F9);
-  static const background = Color(0xFFF9F9FF);
+  static Color get background => AppSettings.instance.darkMode
+      ? const Color(0xFF101722)
+      : const Color(0xFFF9F9FF);
   static const softBlue = Color(0xFFEFF4FF);
   static const softBlueBorder = Color(0xFFE1E9FB);
   static const registerBg = Color(0xFFEAF6FD);

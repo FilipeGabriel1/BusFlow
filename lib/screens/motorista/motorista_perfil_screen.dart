@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../services/account_profile.dart';
+import '../../services/app_settings.dart';
 import '../../services/motorista_data_store.dart';
 import '../../services/motorista_storage.dart';
+import '../../services/supabase_auth_service.dart';
 import '../../theme.dart';
 import '../../widgets/logo.dart';
+import '../../widgets/profile_photo_picker.dart';
+import '../dados_pessoais_screen.dart';
 import '../login_screen.dart';
+import '../security_settings_screen.dart';
 
 class MotoristaPerfilScreen extends StatefulWidget {
   const MotoristaPerfilScreen({super.key});
@@ -15,7 +21,29 @@ class MotoristaPerfilScreen extends StatefulWidget {
 
 class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
   bool _alertasTrafego = true;
-  bool _modoNoturno = true;
+  String _profilePhoto = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfilePhoto();
+  }
+
+  Future<void> _loadProfilePhoto() async {
+    final data = await MotoristaStorage.getMotorista();
+    if (mounted) setState(() => _profilePhoto = data['profilePhoto'] ?? '');
+  }
+
+  Future<void> _editarDados() async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) =>
+            const DadosPessoaisScreen(profileKind: ProfileKind.motorista),
+      ),
+    );
+    await MotoristaDataStore.instance.load();
+    await _loadProfilePhoto();
+  }
 
   void _snack(String message) {
     ScaffoldMessenger.of(context)
@@ -47,6 +75,7 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
       ),
     );
     if (confirmar != true) return;
+    await SupabaseAuthService.signOut();
     await MotoristaStorage.clear();
     MotoristaDataStore.instance.limparTudo();
     if (!mounted) return;
@@ -175,41 +204,24 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
       ),
       child: Column(
         children: [
-          Stack(
-            alignment: Alignment.bottomRight,
-            children: [
-              Container(
-                width: 84,
-                height: 84,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.softBlueBorder,
-                    width: 3,
+          GestureDetector(
+            onTap: _editarDados,
+            child: Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                ProfilePhotoAvatar(photo: _profilePhoto, size: 84),
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
                   ),
-                  color: AppColors.softBlue,
+                  child: const Icon(Icons.edit, size: 12, color: Colors.white),
                 ),
-                child: const Icon(
-                  Icons.person,
-                  size: 44,
-                  color: AppColors.primary,
-                ),
-              ),
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: const Icon(
-                  Icons.edit,
-                  size: 12,
-                  color: Colors.white,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 12),
           Text(
@@ -233,26 +245,17 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
             runSpacing: 7,
             alignment: WrapAlignment.center,
             children: [
-              _MiniBadge(
-                icon: Icons.badge_outlined,
-                label: empresa,
-              ),
-              _MiniBadge(
-                icon: Icons.schedule,
-                label: turno,
-              ),
+              _MiniBadge(icon: Icons.badge_outlined, label: empresa),
+              _MiniBadge(icon: Icons.schedule, label: turno),
               if (store.cnh.isNotEmpty)
-                _MiniBadge(
-                  icon: Icons.verified,
-                  label: 'CNH ${store.cnh}',
-                ),
+                _MiniBadge(icon: Icons.verified, label: 'CNH ${store.cnh}'),
             ],
           ),
           const SizedBox(height: 14),
           SizedBox(
             height: 46,
             child: ElevatedButton.icon(
-              onPressed: () => _snack('Carteira digital do motorista aberta.'),
+              onPressed: () => _mostrarCnh(store),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -301,8 +304,7 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
               ? 'Registro ${store.cnh} • CNH Digital'
               : 'Nenhuma CNH cadastrada',
           status: temCnh ? 'Verificado' : 'Pendente',
-          statusColor:
-              temCnh ? AppColors.green : const Color(0xFFF59E0B),
+          statusColor: temCnh ? AppColors.green : const Color(0xFFF59E0B),
         ),
         const _CredencialRow(
           icon: Icons.health_and_safety_outlined,
@@ -434,10 +436,7 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
               Text(
                 'Atribuições da central aparecem em Viagens.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: AppColors.hintGray,
-                ),
+                style: TextStyle(fontSize: 11.5, color: AppColors.hintGray),
               ),
             ],
           )
@@ -455,6 +454,149 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
     );
   }
 
+  Future<void> _mostrarCnh(MotoristaDataStore store) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('CNH Digital'),
+        content: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: AppColors.softBlue,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.badge_outlined, color: AppColors.primary),
+              const SizedBox(height: 12),
+              Text(
+                store.nomeCompleto,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Registro CNH: ${store.cnh.isEmpty ? 'Não informado' : store.cnh}',
+              ),
+              Text('Categoria: ${store.categoriaExibicao}'),
+              const SizedBox(height: 8),
+              const Text(
+                'Validade não cadastrada',
+                style: TextStyle(color: AppColors.textGray, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _mostrarEscala(MotoristaDataStore store) async {
+    var selectedDay = DateUtils.dateOnly(DateTime.now());
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Folha de Escala'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CalendarDatePicker(
+                  initialDate: selectedDay,
+                  firstDate: DateTime(DateTime.now().year - 1),
+                  lastDate: DateTime(DateTime.now().year + 2),
+                  onDateChanged: (day) => setDialogState(
+                    () => selectedDay = DateUtils.dateOnly(day),
+                  ),
+                ),
+                const Divider(),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '${selectedDay.day.toString().padLeft(2, '0')}/'
+                    '${selectedDay.month.toString().padLeft(2, '0')}/'
+                    '${selectedDay.year} • ${store.turno.isEmpty ? 'Turno não definido' : store.turno}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (store.rotas.isEmpty)
+                  const Text(
+                    'Nenhuma rota atribuída para este motorista.',
+                    style: TextStyle(color: AppColors.textGray),
+                  )
+                else
+                  for (final route in store.rotas)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.directions_bus_outlined),
+                      title: Text('${route.linha} • ${route.onibus}'),
+                      subtitle: Text('${route.origem} → ${route.destino}'),
+                    ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Fechar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _trocarTurno(MotoristaDataStore store) async {
+    const shifts = ['Manhã', 'Tarde', 'Noite'];
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text(
+                'Solicitar troca de turno',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
+            for (final shift in shifts)
+              ListTile(
+                leading: Icon(
+                  store.turno == shift
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: AppColors.primary,
+                ),
+                title: Text(shift),
+                onTap: () => Navigator.pop(context, shift),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || selected == store.turno) return;
+    await SupabaseAuthService.updateCurrentProfileData({'turno': selected});
+    final profile = await MotoristaStorage.getMotorista();
+    await MotoristaStorage.updateProfile(
+      fields: {'turno': selected},
+      profilePhoto: profile['profilePhoto'] ?? '',
+    );
+    await MotoristaDataStore.instance.load();
+    if (mounted) _snack('Turno atualizado para $selected.');
+  }
+
   Widget _buildEscala(MotoristaDataStore store) {
     final turno = store.turno.isNotEmpty ? store.turno : 'Não definido';
     return _SectionCard(
@@ -464,8 +606,7 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
         style: TextStyle(
           fontSize: 10.5,
           fontWeight: FontWeight.w800,
-          color:
-              store.rotas.isNotEmpty ? AppColors.green : AppColors.textGray,
+          color: store.rotas.isNotEmpty ? AppColors.green : AppColors.textGray,
         ),
       ),
       children: [
@@ -477,20 +618,14 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
                 children: [
                   Text(
                     'Turno Alocado',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textGray,
-                    ),
+                    style: TextStyle(fontSize: 11, color: AppColors.textGray),
                   ),
                   SizedBox(height: 3),
                 ],
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 11,
-                vertical: 7,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
               decoration: BoxDecoration(
                 color: AppColors.softBlue,
                 borderRadius: BorderRadius.circular(10),
@@ -514,7 +649,7 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
               child: SizedBox(
                 height: 38,
                 child: OutlinedButton.icon(
-                  onPressed: () => _snack('Folha de escala aberta.'),
+                  onPressed: () => _mostrarEscala(store),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: const BorderSide(color: AppColors.primary),
@@ -526,10 +661,7 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
                   icon: const Icon(Icons.calendar_month, size: 15),
                   label: const Text(
                     'Folha de Escala',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -539,8 +671,7 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
               child: SizedBox(
                 height: 38,
                 child: OutlinedButton.icon(
-                  onPressed: () =>
-                      _snack('Solicitação de troca de turno enviada.'),
+                  onPressed: () => _trocarTurno(store),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: const BorderSide(color: AppColors.primary),
@@ -552,10 +683,7 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
                   icon: const Icon(Icons.swap_horiz, size: 15),
                   label: const Text(
                     'Trocar Turno',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -570,6 +698,24 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
     return _SectionCard(
       title: 'Configurações & Suporte',
       children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(
+            Icons.security_outlined,
+            color: AppColors.primary,
+          ),
+          title: const Text(
+            'Segurança, senha e sessões',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const SecuritySettingsScreen(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         _SwitchRow(
           icon: Icons.notifications_active_outlined,
           title: 'Alertas de Tráfego & Rota',
@@ -577,23 +723,23 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
           value: _alertasTrafego,
           onChanged: (v) {
             setState(() => _alertasTrafego = v);
-            _snack(v
-                ? 'Alertas de tráfego ativados.'
-                : 'Alertas de tráfego desativados.');
+            _snack(
+              v
+                  ? 'Alertas de tráfego ativados.'
+                  : 'Alertas de tráfego desativados.',
+            );
           },
         ),
         const SizedBox(height: 12),
-        _SwitchRow(
-          icon: Icons.dark_mode_outlined,
-          title: 'Modo Noturno Automático',
-          subtitle: 'Reduz o brilho da tela à noite',
-          value: _modoNoturno,
-          onChanged: (v) {
-            setState(() => _modoNoturno = v);
-            _snack(v
-                ? 'Modo noturno automático ativado.'
-                : 'Modo noturno automático desativado.');
-          },
+        ListenableBuilder(
+          listenable: AppSettings.instance,
+          builder: (context, _) => _SwitchRow(
+            icon: Icons.dark_mode_outlined,
+            title: 'Tema escuro',
+            subtitle: 'Aplicado em todas as telas',
+            value: AppSettings.instance.darkMode,
+            onChanged: AppSettings.instance.setDarkMode,
+          ),
         ),
         const SizedBox(height: 12),
         GestureDetector(
@@ -633,11 +779,7 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
                     ],
                   ),
                 ),
-                Icon(
-                  Icons.phone,
-                  size: 19,
-                  color: AppColors.green,
-                ),
+                Icon(Icons.phone, size: 19, color: AppColors.green),
               ],
             ),
           ),
@@ -666,11 +808,7 @@ class _MotoristaPerfilScreenState extends State<MotoristaPerfilScreen> {
                   ),
                 ),
                 SizedBox(width: 4),
-                Icon(
-                  Icons.chevron_right,
-                  size: 16,
-                  color: AppColors.primary,
-                ),
+                Icon(Icons.chevron_right, size: 16, color: AppColors.primary),
               ],
             ),
           ),
@@ -985,10 +1123,7 @@ class _RotaTag extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             turno,
-            style: const TextStyle(
-              fontSize: 10,
-              color: AppColors.textGray,
-            ),
+            style: const TextStyle(fontSize: 10, color: AppColors.textGray),
           ),
         ],
       ),

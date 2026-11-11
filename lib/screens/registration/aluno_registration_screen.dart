@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../services/app_settings.dart';
+import '../../services/supabase_auth_service.dart';
 import '../../services/student_storage.dart';
 import '../../theme.dart';
+import '../../widgets/profile_photo_picker.dart';
 import '../../widgets/registration_widgets.dart';
 import '../aluno/aluno_main_screen.dart';
 
@@ -16,7 +20,9 @@ class AlunoRegistrationScreen extends StatefulWidget {
 class _AlunoRegistrationScreenState extends State<AlunoRegistrationScreen> {
   int _turno = 0;
   bool _terms = false;
+  bool _biometricOnSignup = false;
   bool _saving = false;
+  String _profilePhoto = '';
 
   final _nome = TextEditingController();
   final _email = TextEditingController();
@@ -298,17 +304,87 @@ class _AlunoRegistrationScreenState extends State<AlunoRegistrationScreen> {
       return;
     }
 
+    if (_biometricOnSignup) {
+      try {
+        final enabled = await AppSettings.instance.enableBiometrics();
+        if (!mounted) return;
+        if (!enabled) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Não foi possível confirmar a biometria. Desative a opção ou tente novamente.',
+              ),
+            ),
+          );
+          return;
+        }
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Não foi possível ativar biometria: $error'),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
     setState(() => _saving = true);
-    await StudentStorage.saveAluno(
-      nome: _nome.text.trim(),
-      email: _email.text.trim(),
-      ra: _ra.text.trim(),
-      cpf: _cpf.text.trim(),
-      whatsapp: _whatsapp.text.trim(),
-      instituicao: _instituicao.text.trim(),
-      turno: _turnos[_turno].$3,
-      senha: _senha.text,
-    );
+    try {
+      if (SupabaseAuthService.isConfigured) {
+        final signedIn = await SupabaseAuthService.signUp(
+          email: _email.text,
+          password: _senha.text,
+          role: BusFlowRole.aluno,
+          profileData: {
+            'nome': _nome.text.trim(),
+            'email': _email.text.trim().toLowerCase(),
+            'ra': _ra.text.trim(),
+            'cpf': _cpf.text.trim(),
+            'whatsapp': _whatsapp.text.trim(),
+            'instituicao': _instituicao.text.trim(),
+            'turno': _turnos[_turno].$3,
+          },
+        );
+        if (!signedIn) {
+          if (!mounted) return;
+          setState(() => _saving = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Conta criada. Confirme o e-mail enviado e depois entre com sua senha.',
+              ),
+            ),
+          );
+          return;
+        }
+      } else {
+        await StudentStorage.saveAluno(
+          nome: _nome.text.trim(),
+          email: _email.text.trim(),
+          ra: _ra.text.trim(),
+          cpf: _cpf.text.trim(),
+          whatsapp: _whatsapp.text.trim(),
+          instituicao: _instituicao.text.trim(),
+          turno: _turnos[_turno].$3,
+          senha: _senha.text,
+          profilePhoto: _profilePhoto,
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Não foi possível criar a conta: '
+            '${error is AuthException ? error.message : error}',
+          ),
+        ),
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() => _saving = false);
     Navigator.of(context).pushAndRemoveUntil(
@@ -525,6 +601,18 @@ class _AlunoRegistrationScreenState extends State<AlunoRegistrationScreen> {
                 title: 'Concordo com os Termos de Transporte Universitário',
                 body: 'Declaro que os dados fornecidos são verídicos e que utilizei meus dados corretamente para os embarques, bem como, com as regras de assentos e reservas dos ônibus.',
               ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _biometricOnSignup,
+                activeColor: AppColors.primary,
+                title: const Text('Ativar biometria neste aparelho'),
+                subtitle: const Text(
+                  'A confirmação é feita pelo sistema do dispositivo.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                onChanged: (value) =>
+                    setState(() => _biometricOnSignup = value ?? false),
+              ),
               const SizedBox(height: 24),
               PrimarySubmitButton(
                 label: _saving ? 'Salvando...' : 'Cadastrar Aluno',
@@ -652,81 +740,14 @@ class _AlunoRegistrationScreenState extends State<AlunoRegistrationScreen> {
   Widget _buildPhotoSection() {
     return Column(
       children: [
-        SizedBox(
-          width: 120,
-          height: 130,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.topCenter,
-            children: [
-              Container(
-                width: 110,
-                height: 110,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFFDBEAFE), width: 2),
-                ),
-                child: const Icon(
-                  Icons.photo_camera,
-                  size: 34,
-                  color: AppColors.primary,
-                ),
-              ),
-              Positioned(
-                top: 66,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.photo_camera, size: 14, color: Colors.white),
-                      SizedBox(width: 6),
-                      Text(
-                        'TIRAR FOTO',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                right: 2,
-                top: 74,
-                child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2.5),
-                  ),
-                  child: const Icon(Icons.edit, size: 14, color: Colors.white),
-                ),
-              ),
-            ],
-          ),
+        ProfilePhotoPicker(
+          photo: _profilePhoto,
+          onChanged: (photo) => setState(() => _profilePhoto = photo),
+          label: _profilePhoto.isEmpty
+              ? 'Tirar foto ou escolher da galeria'
+              : 'Trocar foto',
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
         const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -746,7 +767,7 @@ class _AlunoRegistrationScreenState extends State<AlunoRegistrationScreen> {
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 6),
           child: Text(
-            'Tire uma foto nítida e iluminada do seu rosto, sem óculos escuros ou boné, para verificação imediata na catraca dos ônibus.',
+            'Escolha uma foto da galeria ou tire uma foto com a câmera do aparelho.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 12.5,
