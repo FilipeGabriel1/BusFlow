@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/admin_storage.dart';
+import '../services/api_service.dart';
 import '../services/motorista_storage.dart';
 import '../services/student_storage.dart';
 import '../theme.dart';
@@ -47,7 +48,151 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     final idNormal = identificador.toLowerCase();
     final idDigitos = idNormal.replaceAll(RegExp(r'[^0-9]'), '');
+    final isEmail = identificador.contains('@');
+    final isCpf = !isEmail && idDigitos.isNotEmpty && idDigitos.length >= 11;
 
+    // Tentar login via API primeiro
+    final apiOnline = await ApiService.isApiOnline();
+    if (apiOnline) {
+      if (isEmail) {
+        // Tentar admin
+        final result = await ApiService.loginAdmin(email: idNormal, senha: senha);
+        if (result['sucesso'] == true) {
+          final dados = result['dados'] as Map<String, dynamic>;
+          await AdminStorage.saveAdmin(
+            nome: dados['nome'] ?? '',
+            email: dados['email'] ?? '',
+            cpf: dados['cpf'] ?? '',
+            senha: senha,
+            cargo: dados['cargo'] ?? '',
+            orgao: dados['orgao'] ?? '',
+            chave: dados['chave_adm'] ?? '',
+          );
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const AdminMainScreen()),
+            (route) => false,
+          );
+          return;
+        }
+        // Tentar motorista
+        final resultM = await ApiService.loginMotorista(email: idNormal, senha: senha);
+        if (resultM['sucesso'] == true) {
+          final dados = resultM['dados'] as Map<String, dynamic>;
+          await MotoristaStorage.saveMotorista(
+            nome: dados['nome'] ?? '',
+            email: dados['email'] ?? '',
+            cpf: dados['cpf'] ?? '',
+            senha: senha,
+            cnh: dados['cnh'] ?? '',
+            empresa: dados['empresa'] ?? '',
+            telefone: dados['telefone'] ?? '',
+            categoria: dados['categoria_cnh'] ?? '',
+            turno: dados['turno_operacao'] ?? '',
+          );
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const MotoristaMainScreen()),
+            (route) => false,
+          );
+          return;
+        }
+        // Tentar aluno
+        final resultA = await ApiService.loginAluno(email: idNormal, senha: senha);
+        if (resultA['sucesso'] == true) {
+          final dados = resultA['dados'] as Map<String, dynamic>;
+          await StudentStorage.saveAluno(
+            nome: dados['nome'] ?? '',
+            email: dados['email'] ?? '',
+            cpf: dados['cpf'] ?? '',
+            senha: senha,
+            ra: dados['ra'] ?? '',
+            instituicao: dados['instituicao'] ?? '',
+            whatsapp: dados['telefone'] ?? '',
+            turno: dados['turno'] ?? '',
+          );
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const AlunoMainScreen()),
+            (route) => false,
+          );
+          return;
+        }
+        if (!mounted) return;
+        _snack('Conta não encontrada. Crie sua conta para continuar.');
+        return;
+      }
+      if (isCpf) {
+        // Tentar admin com CPF
+        final result = await ApiService.loginAdmin(cpf: idDigitos, senha: senha);
+        if (result['sucesso'] == true) {
+          final dados = result['dados'] as Map<String, dynamic>;
+          await AdminStorage.saveAdmin(
+            nome: dados['nome'] ?? '',
+            email: dados['email'] ?? '',
+            cpf: dados['cpf'] ?? '',
+            senha: senha,
+            cargo: dados['cargo'] ?? '',
+            orgao: dados['orgao'] ?? '',
+            chave: dados['chave_adm'] ?? '',
+          );
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const AdminMainScreen()),
+            (route) => false,
+          );
+          return;
+        }
+        // Tentar motorista com CPF
+        final resultM = await ApiService.loginMotorista(cpf: idDigitos, senha: senha);
+        if (resultM['sucesso'] == true) {
+          final dados = resultM['dados'] as Map<String, dynamic>;
+          await MotoristaStorage.saveMotorista(
+            nome: dados['nome'] ?? '',
+            email: dados['email'] ?? '',
+            cpf: dados['cpf'] ?? '',
+            senha: senha,
+            cnh: dados['cnh'] ?? '',
+            empresa: dados['empresa'] ?? '',
+            telefone: dados['telefone'] ?? '',
+            categoria: dados['categoria_cnh'] ?? '',
+            turno: dados['turno_operacao'] ?? '',
+          );
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const MotoristaMainScreen()),
+            (route) => false,
+          );
+          return;
+        }
+        // Tentar aluno com CPF
+        final resultA = await ApiService.loginAluno(cpf: idDigitos, senha: senha);
+        if (resultA['sucesso'] == true) {
+          final dados = resultA['dados'] as Map<String, dynamic>;
+          await StudentStorage.saveAluno(
+            nome: dados['nome'] ?? '',
+            email: dados['email'] ?? '',
+            cpf: dados['cpf'] ?? '',
+            senha: senha,
+            ra: dados['ra'] ?? '',
+            instituicao: dados['instituicao'] ?? '',
+            whatsapp: dados['telefone'] ?? '',
+            turno: dados['turno'] ?? '',
+          );
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const AlunoMainScreen()),
+            (route) => false,
+          );
+          return;
+        }
+        if (!mounted) return;
+        _snack('Conta não encontrada. Crie sua conta para continuar.');
+        return;
+      }
+    }
+
+    // Fallback: verificar SharedPreferences localmente
     bool corresponde(Map<String, String> dados) {
       final email = (dados['email'] ?? '').trim().toLowerCase();
       final cpf = (dados['cpf'] ?? '').replaceAll(RegExp(r'[^0-9]'), '');
@@ -58,7 +203,6 @@ class _LoginScreenState extends State<LoginScreen> {
       return false;
     }
 
-    // Contas antigas (antes da validação de senha) aceitam qualquer senha.
     bool senhaOk(Map<String, String> dados) {
       final salva = dados['senha'] ?? '';
       return salva.isEmpty || salva == senha;
